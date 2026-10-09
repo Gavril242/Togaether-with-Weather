@@ -1,0 +1,36 @@
+name: fourcast
+
+services:
+  web:
+    image: ${FOURCAST_IMAGE:?Set FOURCAST_IMAGE to the verified release image}
+    pull_policy: never
+    restart: unless-stopped
+    init: true
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 384m
+    memswap_limit: 384m
+    cpus: 1.0
+    pids_limit: 128
+    stop_grace_period: 30s
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      HOSTNAME: "0.0.0.0"
+      PORT: "3000"
+      NODE_OPTIONS: "--max-old-space-size=256"
+      TRUST_CLOUDFLARE_PROXY: "true"
+    ports:
+      - "127.0.0.1:3102:3000"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+      - /app/.next/cache:rw,noexec,nosuid,size=32m,uid=1000,gid=1000,mode=0700
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"

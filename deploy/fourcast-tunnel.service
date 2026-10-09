@@ -1,0 +1,30 @@
+[Unit]
+Description=Fourcast dedicated Cloudflare connector
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+LoadCredential=cloudflare.token:/etc/fourcast/cloudflare.token
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --metrics 127.0.0.1:20246 run --token-file %d/cloudflare.token
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=192M
+CPUQuota=50%
+TasksMax=64
+Nice=10
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

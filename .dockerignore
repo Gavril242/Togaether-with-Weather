@@ -1,0 +1,17 @@
+# Only application inputs may enter the build context.
+**
+!package.json
+!package-lock.json
+!tsconfig.json
+!next-env.d.ts
+!next.config.ts
+!postcss.config.*
+!src/
+!src/**
+!public/
+!public/**
+
+# Keep environment files excluded even inside an allowed source directory.
+**/.env*
+**/*.log
+**/*.tsbuildinfo

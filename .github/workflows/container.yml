@@ -1,0 +1,131 @@
+name: ARM64 container
+
+on:
+  push:
+    branches: [main, codex/pi-weather-deployment]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  arm64:
+    name: Build and verify ARM64 release image
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/pi-weather-deployment'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      FOURCAST_IMAGE: fourcast:${{ github.sha }}
+    steps:
+      - name: Check out source without stored credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node for release metadata
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Confirm native ARM64 runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          docker version
+          docker compose version
+
+      - name: Build the pinned standalone image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --tag "$FOURCAST_IMAGE" .
+          test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$FOURCAST_IMAGE")" = linux/arm64
+          test "$(docker image inspect --format '{{.Config.User}}' "$FOURCAST_IMAGE")" = node
+
+      - name: Start the exact production Compose service
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose config --quiet
+          docker compose up --wait --wait-timeout 120
+
+      - name: Verify liveness, dashboard and bundled assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose exec -T web node --input-type=module <<'NODE'
+          const origin = 'http://127.0.0.1:3000';
+          const health = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(5000) });
+          if (!health.ok || (await health.json()).status !== 'ok') throw new Error('Liveness failed');
+          const page = await fetch(origin, { signal: AbortSignal.timeout(10000) });
+          if (!page.ok) throw new Error(`Dashboard returned ${page.status}`);
+          const html = await page.text();
+          const asset = html.match(/src="(\/_next\/static\/[^"<>]+\.js[^"<>]*)"/);
+          if (!asset) throw new Error('Dashboard script asset was absent');
+          const script = await fetch(`${origin}${asset[1].replaceAll('&amp;', '&')}`, { signal: AbortSignal.timeout(10000) });
+          if (!script.ok || !(await script.text()).length) throw new Error('Standalone script asset failed');
+          NODE
+          curl --fail --silent --show-error --max-time 10 http://127.0.0.1:3102/api/health
+
+      - name: Export image and release manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir release
+          docker image inspect "$FOURCAST_IMAGE" > release/image-inspect.json
+          docker save "$FOURCAST_IMAGE" | gzip -n > release/fourcast-arm64.tar.gz
+          node --input-type=module <<'NODE'
+          import { createHash } from 'node:crypto';
+          import { createReadStream } from 'node:fs';
+          import { readFile, writeFile, unlink } from 'node:fs/promises';
+          const inspect = JSON.parse(await readFile('release/image-inspect.json', 'utf8'))[0];
+          const hash = createHash('sha256');
+          for await (const chunk of createReadStream('release/fourcast-arm64.tar.gz')) hash.update(chunk);
+          const archiveSha256 = hash.digest('hex');
+          const manifest = {
+            schemaVersion: 1,
+            repository: process.env.GITHUB_REPOSITORY,
+            sourceCommit: process.env.GITHUB_SHA,
+            sourceRef: process.env.GITHUB_REF,
+            workflowRunId: process.env.GITHUB_RUN_ID,
+            workflowRunAttempt: process.env.GITHUB_RUN_ATTEMPT,
+            promotionEligible: process.env.GITHUB_REF === 'refs/heads/main',
+            platform: `${inspect.Os}/${inspect.Architecture}`,
+            image: process.env.FOURCAST_IMAGE,
+            imageId: inspect.Id,
+            archive: 'fourcast-arm64.tar.gz',
+            archiveSha256,
+            nodeBase: 'node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20',
+          };
+          await writeFile('release/release.json', `${JSON.stringify(manifest, null, 2)}\n`);
+          await writeFile('release/SHA256SUMS', `${archiveSha256}  fourcast-arm64.tar.gz\n`);
+          await unlink('release/image-inspect.json');
+          NODE
+
+      - name: Upload the verified image archive
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fourcast-arm64-${{ github.sha }}
+          path: release/
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Keep container failure diagnostics
+        if: failure()
+        shell: bash
+        run: docker compose logs --no-color --tail 100
+
+      - name: Stop only this workflow's Compose project
+        if: always()
+        shell: bash
+        run: docker compose down --timeout 30
