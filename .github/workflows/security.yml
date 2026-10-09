@@ -1,0 +1,104 @@
+name: Daily stack security report
+
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fourcast-security-report
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: Audit main lockfile and ARM64 runtime image
+    if: github.repository == 'Gavril242/Togaether-with-Weather' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    steps:
+      - name: Check out the exact trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Node.js 24
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Test report verification boundaries
+        run: node --test scripts/security-report.test.mjs
+      - name: Build the main runtime image
+        id: build
+        continue-on-error: true
+        env:
+          IMAGE: fourcast-security:${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          mkdir -p security .cache/trivy
+          docker build --tag "$IMAGE" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" .
+          docker image inspect "$IMAGE" > security/image-inspect.json
+          docker save --output "$RUNNER_TEMP/fourcast-scan.tar" "$IMAGE"
+      - name: Scan detected image packages with pinned Trivy
+        id: trivy
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          scanner='aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa'
+          docker run --rm "$scanner" --version > security/trivy-version.txt
+          docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges \
+            --user "$(id -u):$(id -g)" --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --mount "type=bind,src=$PWD/security,dst=/report" \
+            --mount "type=bind,src=$PWD/.cache/trivy,dst=/cache" \
+            --mount "type=bind,src=$RUNNER_TEMP/fourcast-scan.tar,dst=/image.tar,readonly" \
+            "$scanner" image --input /image.tar --cache-dir /cache --scanners vuln \
+            --pkg-types os,library --format json --output /report/trivy.json \
+            --exit-code 0 --timeout 5m --ignorefile /dev/null --skip-version-check --disable-telemetry
+      - name: Collect verified findings and explicit scanner errors
+        env:
+          IMAGE_BUILD_OUTCOME: ${{ steps.build.outcome }}
+          TRIVY_SCAN_OUTCOME: ${{ steps.trivy.outcome }}
+        run: node scripts/security-report.mjs collect security
+      - name: Retain the bounded public report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fourcast-security-${{ github.sha }}
+          path: security/latest.json
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    name: Append the report to its public branch
+    needs: scan
+    if: github.repository == 'Gavril242/Togaether-with-Weather' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the same trusted revision without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Node.js 24
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Download this run's scan report
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: fourcast-security-${{ github.sha }}
+          path: security
+      - name: Publish only latest.json with an append-only commit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/security-report.mjs publish security/latest.json
