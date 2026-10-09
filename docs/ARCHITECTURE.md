@@ -1,12 +1,12 @@
 # Architecture
 
-Status: weather, cookie preferences, and container packaging implemented, 10 October 2026. The dashboard, location and weather routes, atmospheric background, deterministic image prompt builder, and server only Gemini adapter exist. The owner authorized a separate Pi origin and supplied a tunnel token. The dedicated connector is online; promotion and monitoring evidence are tracked in [operations](OPERATIONS.md). Image admission, durable jobs, database, and media remain proposed. No hardware performance benchmark is claimed.
+Status: weather dashboard deployed to a separate Pi origin on 10 October 2026. The dashboard, location and weather routes, consent controlled cookie preferences, adaptive atmospheric background, deterministic image prompt builder, and server only Gemini adapter exist. The connector, HTTPS hostname, outage and recovery workflow, and controlled Resend acceptance are recorded in [operations](OPERATIONS.md). Image admission, durable jobs, database, and media remain proposed. No hardware performance benchmark is claimed.
 
 Current runtime requires Node.js 24 and npm only. Weather runs without an environment file. The Gemini adapter is not connected to a browser generation route; adding a key does not enable generation. One authorized live image probe returned HTTP 429 for image quota.
 
 Implemented caches are bounded in memory: searches retain results for ten minutes, canonical locations are fresh for 24 hours with a seven day fallback, and weather is fresh for five minutes with a 30 minute labelled fallback. Weather fallback cannot cross the location's date boundary. Identical upstream reads are coalesced. Retry backoff, jitter, shared caching, and request IDs below are future targets.
 
-The product must run locally from a fresh clone and later fit alongside existing projects on a Raspberry Pi 4 with 4 GB RAM. Deployment is a separate stage after the owner supplies Cloudflare tunnel details. Existing repositories, services, networks, and tunnel routes are outside this project's change boundary.
+The product runs locally from a fresh clone and fits alongside existing projects on a Raspberry Pi 4 with 4 GB RAM. The owner authorized a dedicated Cloudflare tunnel and a loopback only origin. Existing repositories, services, networks, and tunnel routes are outside this project's change boundary.
 
 ## 1. Technology decisions
 

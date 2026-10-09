@@ -1,14 +1,14 @@
 # Delivery plan
 
-Status: foundation and weather implemented, 9 October 2026. Browser image generation and deployment remain incomplete. The Gemini adapter and prompt builder have fixture tests, but account image quota is unavailable. The sequence below retains the acceptance gates for completing the product.
+Status: weather foundation, public safeguards, Pi deployment, consent controls, operations, and the weather experience are shipped, 10 October 2026. Browser image generation remains incomplete because the supplied account has no usable image quota. Durable image jobs, ownership, media storage, and spending controls remain required before public generation.
 
 ## Outcome and boundaries
 
 Build one dashboard where a visitor chooses four places, sees real weather and local time for each, and generates one image from an immutable snapshot of their weather. The exact prompt appears beside the image. Failures remain visible and confined to the feature that failed.
 
-Keep this repository separate from the existing recruitment project. Preserve its code and history. The first product release runs locally with the reviewer's own image API key. A subsequent release is prepared for the owner's Raspberry Pi 4 with 4 GB RAM.
+Keep this repository separate from the existing recruitment project. Preserve its code and history. The first product release runs locally with no API key for weather. The public weather origin is deployed to the owner's Raspberry Pi 4 with 4 GB RAM; image generation remains disabled.
 
-The Pi already hosts other projects. No Pi access, changes to existing services, tunnel changes, or deployment happens during planning. Deployment is a later stage after the owner supplies the Cloudflare tunnel and hostname details.
+The Pi already hosts other projects. The owner authorized a separate origin and Cloudflare Tunnel; only this project's files, container, connector, and n8n workflows were changed. Existing projects remain outside this deployment.
 
 ## Product requirements
 
@@ -63,7 +63,7 @@ Each phase has its own commits and a reviewable result. Application CI begins wi
 | 4. Public safeguards | Stronger public quotas, origin checks, server validated abuse challenge, retention, and honest readiness | Abuse and ownership tests pass; database failure blocks new paid jobs; crash and disk pressure recovery are demonstrated | `codex/public-safety` |
 | 5. Containers and releases | Nonroot containers, health probes, real vulnerability gates, GHCR image publication, supported architecture builds, release manifests | Images start and pass smoke checks on hosted runners; failing gates prevent publication; manifests record immutable digests | `codex/releases` |
 | 6. Usability and performance | Responsive visual polish, React transitions, reduced motion, accessibility review, accurate metadata, measured performance | Keyboard and mobile flows pass; performance reports are retained; no fabricated Lighthouse or deployment claims | `codex/experience` |
-| 7. Pi deployment and handover | Isolated Compose project, supplied tunnel route, health checks, backup and restore, rollback, monitoring, optional n8n integration | Only after deployment stage authorization: local and public probes pass, restore and rollback are exercised, other projects remain unaffected | `codex/pi-release` |
+| 7. Pi deployment and handover | Isolated Compose project, dedicated supplied tunnel connector, health checks, rollback, and separate n8n alerts | Pi health and public HTTPS probes pass; controlled outage and recovery mail requests are accepted; security feed is verified before scanner alerts activate | `codex/pi-release` |
 
 The current increment ships the weather foundation, cookie preferences, part of the experience phase, and the image provider boundary. Phases 1 through 3 must satisfy all gates to deliver the complete assignment locally. Phase 4 is required before anonymous public paid generation. On 10 October the owner supplied a tunnel token and authorized a weather only Pi deployment. Phase 5 now builds verified ARM64 image archives with manifests rather than publishing to GHCR; this avoids introducing registry credentials on the shared host. The phase 7 connector is online; origin and monitoring evidence belongs in [operations](OPERATIONS.md).
 

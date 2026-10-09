@@ -26,7 +26,7 @@ The dedicated `fourcast-tunnel.service` uses the Pi's existing cloudflared binar
 
 The new connector's metrics and readiness bind only to `127.0.0.1:20246`. `/ready` proves an edge connection; separately probe the app and weather. Configure the supplied tunnel's public hostname as HTTP with service URL `http://127.0.0.1:3102`. Cloudflare terminates HTTPS for the public hostname.
 
-The connector was observed with four ready connections on 10 October. The origin rollout and public hostname verification are still pending at this documentation increment.
+The connector was observed with four ready connections on 10 October. The Pi origin responds on `127.0.0.1:3102`; the public HTTPS hostname and health endpoint return HTTP 200. Cloudflare edge HTTP is redirected by the app proxy to the configured `https://fourcast.misaland.me` origin. HSTS is sent by the app on HTTPS responses. This proves tunnel delivery and TLS termination, not Cloudflare Access authentication or account level WAF rules.
 
 ## API limits
 
@@ -38,6 +38,10 @@ Paid image generation remains disabled. An image key or tunnel does not bypass t
 
 ## Monitoring
 
-The new [n8n template](../deploy/n8n/README.md) checks application liveness and a fixed canonical weather location, including stale responses, without calling the paid image model. It reuses the store's Resend configuration in a separate credential. Three consecutive failures trigger one outage email; two healthy checks trigger recovery. Resend idempotency and a bounded retry window prevent blind repeated submissions. Workflow static data provides best effort incident persistence; it is not a transactional outbox. Existing store code, mail settings, and workflows remain unchanged.
+The new [n8n template](../deploy/n8n/README.md) checks application liveness and a fixed canonical weather location, including stale responses, without calling the paid image model. It reuses the store's Resend configuration in a separate credential. Three consecutive failures trigger one outage email; two healthy checks trigger recovery. Controlled Pi verification accepted both outage and recovery messages through Resend, then removed its temporary test workflow. The production workflow now checks `127.0.0.1:3102` every five minutes and sends to the owner's requested address, `donetlucky242@gmail.com`. A 2xx response with a Resend ID means the provider accepted the request; it cannot prove inbox delivery. Resend idempotency and a bounded retry window prevent blind repeated submissions. Workflow static data provides best effort incident persistence; it is not a transactional outbox. Existing store code, mail settings, and workflows remain unchanged.
 
-Activation requires working n8n management access and a verified origin. A monitor on the same Pi cannot detect its own host losing power; external availability monitoring remains future work.
+A monitor on the same Pi cannot detect its own host losing power or its own n8n service stopping. External availability monitoring remains future work.
+
+The repository security workflow scans `main`'s locked npm dependency tree and a newly built ARM64 runtime image. It publishes a commit and lock hash identified report on the dedicated `fourcast-security` branch; n8n verifies it against the current lockfile before sending findings. Gemma 4 can summarize verified records, while exact package versions and primary links remain in the email. Its scope is the repository and clean image build; it does not inspect the deployed Pi's running package inventory. Scanner errors and incomplete coverage are reported as such and never interpreted as zero findings. GitHub hosted runners, npm advisory data, the Trivy database, n8n, Gemini, and Resend are external dependencies.
+
+Cloudflare Access, custom edge error pages, and account WAF rules require Cloudflare account configuration and have not been verified here.
