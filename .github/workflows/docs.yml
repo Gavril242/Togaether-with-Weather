@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   documentation:
-    name: Planning documentation
+    name: Documentation and dependency advisories
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -30,7 +30,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
-      - name: Install locked documentation dependencies
+      - name: Install locked dependencies without scripts
         run: npm ci --ignore-scripts --no-fund
 
       - name: Check Markdown
