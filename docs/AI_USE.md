@@ -26,6 +26,12 @@ Rejected or deferred: the reference's large cloud volume and long raymarch were 
 
 Verification: 75 unit and route tests, production desktop and mobile user flows, strict types, code and Markdown lint, production build, and zero known dependency advisories at check time. The software renderer harness exercised all six atmosphere conditions, pause, disposal, and context recovery. One image request returned quota HTTP 429 and was not retried. No live image output was available to inspect. Final delivery notes link the exact GitHub commit and workflow result.
 
+## Round cursor, 9 October 2026
+
+Input: the owner's [React Bits Blob Cursor reference](https://reactbits.dev/animations/blob-cursor) and request for a small green circle. Codex implemented a 12 px DOM variant with following motion, retaining the source attribution and license. The circle keeps a fixed shape; its animation stops when settled. It uses no extra renderer or dependency. An independent agent reviewed lifecycle and native cursor behavior; review added coverage for the HTML background and native cursor exceptions for text and disabled controls.
+
+Verification: code lint, strict types, production build, and all 28 existing browser tests passed. Manual browser checks confirmed the green 12 by 12 circle, click passthrough, text cursor restoration, and keyboard fallback. A screenshot records the visible result. Touch and reduced motion disable the custom cursor through capability checks and CSS.
+
 ## Further implementation record format
 
 For each completed phase, add the tools used, the bounded task handed to them, the code changed after human or agent review, the suggestions rejected and why, and the validation actually performed. Record uncertainty rather than claiming that generated code is correct because a tool produced it.

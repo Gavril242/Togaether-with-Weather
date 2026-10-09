@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RoundBlobCursor } from "@/components/reactbits/RoundBlobCursor";
 import "@fontsource-variable/dm-sans";
 import "@fontsource-variable/manrope";
 import "./globals.css";
@@ -9,5 +10,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body><a href="#main" className="skip-link">Skip to dashboard</a>{children}</body></html>;
+  return <html lang="en"><body><RoundBlobCursor /><a href="#main" className="skip-link">Skip to dashboard</a>{children}</body></html>;
 }

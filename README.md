@@ -28,7 +28,7 @@ Open Meteo supplies place lookup and every weather reading. It provides structur
 
 Gemini `gemini-3.1-flash-image` is the selected image provider because it supports image output without a local GPU. Its server adapter requests one 16:9, 1K image. The deterministic prompt builder uses four validated weather snapshots. Credentials stay server side. Optional future configuration is documented in [.env.example](.env.example) and the [provider record](docs/PROVIDER.md).
 
-The Three.js background follows the focused place's local time and conditions. Clouds, rain, snow, fog, and thunder glow use bounded rendering. Reduced motion and constrained devices use a static sky. Dawn and dusk are stylized, not calculated sunrise. React Bits SpotlightCard is adapted with its [license retained](src/components/reactbits/LICENSE.txt). Hardware performance has not been benchmarked.
+The Three.js background follows the focused place's local time and conditions. Clouds, rain, snow, fog, and thunder glow use bounded rendering. Reduced motion and constrained devices use a static sky. Dawn and dusk are stylized, not calculated sunrise. React Bits SpotlightCard and a small round Blob Cursor variant are adapted with the [license retained](src/components/reactbits/LICENSE.txt). Touch and reduced motion retain native cursors. Hardware performance has not been benchmarked.
 
 ## Current limits
 
