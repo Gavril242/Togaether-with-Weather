@@ -220,8 +220,11 @@ export async function collectReport(directory) {
     report.image = { imageId: image.Id, platform: "linux/arm64", sourceCommit: commit, scannerImage: TRIVY_IMAGE,
       purpose: "Fresh main runtime build; not a deployed Pi inventory" };
     report.scanners.trivy = { status: "ok", version: TRIVY_VERSION, scope: "containerOperatingSystemAndRuntimeLibraries" };
-  } catch {
-    console.error(`Trivy report verification failed at: ${trivyStep}.`);
+  } catch (error) {
+    const expectedFindingError = error instanceof Error && [
+      "Trivy response is invalid", "Trivy advisory identifier is unsupported", "Trivy detected package version is missing",
+    ].includes(error.message) ? ` ${error.message}` : "";
+    console.error(`Trivy report verification failed at: ${trivyStep}.${expectedFindingError}`);
     report.scanners.trivy = failure(TRIVY_VERSION, "ARM64 image build or Trivy scan verification failed; coverage is incomplete");
   }
   const completed = finishReport(report);
