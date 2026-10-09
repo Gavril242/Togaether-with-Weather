@@ -6,6 +6,8 @@ The weather application and image adapter boundaries are implemented. Local Node
 
 The initial planning workflow passed on GitHub. Application CI adds real lint, types, fixtures, dependency advisories, production build, and browser checks on hosted runners without provider keys. A committed workflow alone does not prove its run passed; link final run results in delivery notes.
 
+Commit `c32d4ef` passed [the application workflow](https://github.com/Gavril242/Togaether-with-Weather/actions/runs/37965578960). A new public checkout with no environment file passed locked installation, lint, types, all 75 unit and route tests, Markdown, audit, and all 28 production browser tests. A keyless live search and forecast through the production server both returned HTTP 200 for Bucharest, with explicit units and provider observation time. Later changes must pass their own checks.
+
 One authorized Gemini image probe returned HTTP 429 for image quotas. Refusal, timeout, and successful image bytes are tested with transports, not live generation. No generated image, durable job, PostgreSQL integration, container, backup restore, Pi deployment, Lighthouse result, or hardware GPU benchmark is verified.
 
 Application commands are in the README. The atmospheric shader and context lifecycle were also exercised with Chromium software rendering, as recorded in the [component notes](../src/components/atmosphere/README.md). Software rendering is not hardware performance evidence. Automated accessibility scores and manual screen reader verification remain future work.
