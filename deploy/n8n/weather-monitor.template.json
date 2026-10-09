@@ -1,0 +1,355 @@
+{
+  "name": "Fourcast weather API monitor",
+  "active": false,
+  "nodes": [
+    {
+      "id": "schedule",
+      "name": "Every five minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "check_app_health",
+      "name": "Check app health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "retryOnFail": false,
+      "parameters": {
+        "url": "__FOURCAST_ORIGIN__/api/health",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "timeout": 3000
+        }
+      }
+    },
+    {
+      "id": "validate_app_health",
+      "name": "Validate app health",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "/** Pure incident logic shared by fixture tests and the generated n8n Code nodes. */\nconst MONITOR_POLICY = Object.freeze({\n  failuresBeforeAlert: 3,\n  successesBeforeRecovery: 2,\n  retryCooldownMs: 30 * 60_000,\n  retryWindowMs: 23 * 60 * 60_000,\n  maxNotificationAttempts: 12,\n});\n\nfunction jsonBody(response) {\n  if (!response || typeof response !== \"object\" || response.error) return null;\n  try {\n    const body = typeof response.body === \"string\"\n      ? response.body.length <= 64 * 1024 ? JSON.parse(response.body) : null\n      : response.body;\n    return body && typeof body === \"object\" && !Array.isArray(body) ? body : null;\n  } catch {\n    return null;\n  }\n}\n\nfunction classifyHealth(response) {\n  const status = Number.isInteger(response?.statusCode) ? response.statusCode : 0;\n  const body = jsonBody(response);\n  const ok = status === 200 && body?.status === \"ok\" && body?.service === \"togaether-weather\";\n  return {\n    ok,\n    component: \"app\",\n    status,\n    reason: ok ? \"App is available\" : status === 0 ? \"App connection failed\" : status !== 200 ? `App returned HTTP ${status}` : \"App health response is invalid\",\n  };\n}\n\nfunction classifyWeather(response, now, locationId = 683506) {\n  const status = Number.isInteger(response?.statusCode) ? response.statusCode : 0;\n  const body = jsonBody(response);\n  const failed = (reason) => ({ ok: false, component: \"weather\", status, reason });\n  if (status === 0) return failed(\"Weather connection failed\");\n  if (status !== 200) return failed(`Weather returned HTTP ${status}`);\n  const weather = body?.weather;\n  const cache = body?.cache;\n  const observed = Date.parse(weather?.observedAt);\n  const fetched = Date.parse(weather?.fetchedAt);\n  if (\n    weather?.location?.id !== locationId ||\n    weather?.units?.temperature !== \"°C\" || weather?.units?.wind !== \"km/h\" ||\n    ![weather?.temperatureC, weather?.windKmh, weather?.highC, weather?.lowC].every((value) => typeof value === \"number\" && Number.isFinite(value)) ||\n    weather.highC < weather.lowC || weather.windKmh < 0 || weather.windKmh > 500 ||\n    [weather.temperatureC, weather.highC, weather.lowC].some((value) => value < -120 || value > 80) ||\n    !Number.isFinite(observed) || !Number.isFinite(fetched) ||\n    observed > now + 15 * 60_000 || now - observed > 150 * 60_000 ||\n    fetched > now + 60_000 || now - fetched > 30 * 60_000 ||\n    !Number.isFinite(cache?.ageSeconds) || cache.ageSeconds < 0 ||\n    ![\"fresh\", \"stale\"].includes(cache?.status) ||\n    (cache.status === \"fresh\" && cache.ageSeconds >= 300)\n  ) return failed(\"Weather response is invalid or obsolete\");\n  if (cache.status === \"stale\" || typeof body.warning === \"string\") {\n    return failed(\"Weather refresh failed and cached conditions are being served\");\n  }\n  return { ok: true, component: \"weather\", status, reason: \"Weather is available\" };\n}\n\nfunction initialMonitorState() {\n  return {\n    version: 1, failureCount: 0, successCount: 0, firstFailureAt: null,\n    lastCheckedAt: null, lastHealthyAt: null, lastReason: null, incident: null,\n  };\n}\n\nfunction createNotification(kind, incident, now, config, reason) {\n  const outage = kind === \"outage\";\n  const payload = {\n    from: config.from,\n    to: [config.to],\n    subject: outage ? \"Fourcast weather API needs attention\" : \"Fourcast weather API recovered\",\n    text: [\n      outage ? \"Three consecutive checks failed.\" : \"Two consecutive checks succeeded after an outage.\",\n      `Dashboard: ${config.origin}`,\n      `Incident: ${incident.id}`,\n      `First failure: ${new Date(incident.firstFailureAt).toISOString()}`,\n      `${outage ? \"Confirmed failure\" : \"Confirmed recovery\"}: ${new Date(now).toISOString()}`,\n      `Reason: ${reason}`,\n      \"This monitor checks app health and the Bucharest weather response.\",\n    ].join(\"\\n\"),\n  };\n  return {\n    kind,\n    key: `fourcast/${incident.id}/${kind}`,\n    payload,\n    firstAttemptAt: null,\n    lastAttemptAt: null,\n    attempts: 0,\n    acceptedAt: null,\n    abandonedAt: null,\n  };\n}\n\nfunction dueNotification(notification, now) {\n  if (!notification || notification.acceptedAt !== null || notification.abandonedAt !== null) return null;\n  if (\n    notification.attempts >= MONITOR_POLICY.maxNotificationAttempts ||\n    (notification.firstAttemptAt !== null && now - notification.firstAttemptAt >= MONITOR_POLICY.retryWindowMs)\n  ) {\n    notification.abandonedAt = now;\n    return null;\n  }\n  if (notification.lastAttemptAt !== null && now - notification.lastAttemptAt < MONITOR_POLICY.retryCooldownMs) return null;\n  notification.firstAttemptAt ??= now;\n  notification.lastAttemptAt = now;\n  notification.attempts += 1;\n  // Both the key and body remain exactly the same throughout all retries.\n  return { kind: notification.kind, key: notification.key, payload: notification.payload };\n}\n\nfunction advanceMonitor(previous, probe, now, incidentId, config) {\n  if (!Number.isFinite(now) || typeof probe?.ok !== \"boolean\") throw new Error(\"Invalid monitor input\");\n  const state = previous ? JSON.parse(JSON.stringify(previous)) : initialMonitorState();\n  if (state.version !== 1 || !Number.isSafeInteger(state.failureCount) || !Number.isSafeInteger(state.successCount)) {\n    throw new Error(\"Unsupported monitor state; review before resetting\");\n  }\n  if (state.lastCheckedAt !== null && now <= state.lastCheckedAt) return { state, notification: null };\n  state.lastCheckedAt = now;\n  state.lastReason = probe.reason;\n\n  if (!probe.ok) {\n    state.successCount = 0;\n    state.failureCount += 1;\n    state.firstFailureAt ??= now;\n    if (state.failureCount >= MONITOR_POLICY.failuresBeforeAlert && (!state.incident || state.incident.closedAt !== null)) {\n      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(incidentId)) throw new Error(\"Invalid incident ID\");\n      state.incident = {\n        id: incidentId, firstFailureAt: state.firstFailureAt, confirmedAt: now,\n        closedAt: null, outage: null, recovery: null,\n      };\n      state.incident.outage = createNotification(\"outage\", state.incident, now, config, probe.reason);\n    }\n    const notification = state.incident?.closedAt === null ? dueNotification(state.incident.outage, now) : null;\n    return { state, notification };\n  }\n\n  state.lastHealthyAt = now;\n  state.failureCount = 0;\n  state.firstFailureAt = null;\n  state.successCount += 1;\n  if (state.incident?.closedAt === null && state.successCount >= MONITOR_POLICY.successesBeforeRecovery) {\n    state.incident.closedAt = now;\n    // Do not send an outage email after recovery if its earlier attempts failed.\n    if (typeof state.incident.outage?.acceptedAt === \"number\") {\n      state.incident.recovery = createNotification(\"recovery\", state.incident, now, config, \"App health and weather are available\");\n    } else if (state.incident.outage) {\n      state.incident.outage.abandonedAt = now;\n    }\n  }\n  const notification = state.incident?.closedAt !== null && state.successCount >= MONITOR_POLICY.successesBeforeRecovery\n    ? dueNotification(state.incident?.recovery, now) : null;\n  return { state, notification };\n}\n\nfunction acknowledgeNotification(previous, key, response, now) {\n  const state = JSON.parse(JSON.stringify(previous));\n  const incident = state.incident;\n  const notification = [incident?.outage, incident?.recovery].find((item) => item?.key === key);\n  if (!notification || notification.acceptedAt !== null || notification.abandonedAt !== null) return state;\n  const body = jsonBody(response);\n  if (\n    !response?.error && Number.isInteger(response?.statusCode) &&\n    response.statusCode >= 200 && response.statusCode < 300 &&\n    typeof body?.id === \"string\" && body.id.length > 0 && body.id.length <= 200\n  ) {\n    notification.acceptedAt = now;\n  }\n  // Discard API bodies and transport messages; they may contain private details.\n  return state;\n}\n\n/** Incident labels do not authorize anything. Prefer the native UUID generator. */\nfunction monitorIncidentId() {\n  if (typeof globalThis.crypto?.randomUUID === \"function\") return globalThis.crypto.randomUUID();\n  return \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, (character) => {\n    const value = Math.floor(Math.random() * 16);\n    return (character === \"x\" ? value : (value & 3) | 8).toString(16);\n  });\n}\n\n\nreturn [{ json: classifyHealth($input.first().json) }];"
+      }
+    },
+    {
+      "id": "app_is_available",
+      "name": "App is available",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "App is available-condition",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "check_bucharest_weather",
+      "name": "Check Bucharest weather",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        -100
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "retryOnFail": false,
+      "parameters": {
+        "url": "__FOURCAST_ORIGIN__/api/weather?locationId=683506",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "timeout": 20000
+        }
+      }
+    },
+    {
+      "id": "evaluate_incident",
+      "name": "Evaluate incident",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "/** Pure incident logic shared by fixture tests and the generated n8n Code nodes. */\nconst MONITOR_POLICY = Object.freeze({\n  failuresBeforeAlert: 3,\n  successesBeforeRecovery: 2,\n  retryCooldownMs: 30 * 60_000,\n  retryWindowMs: 23 * 60 * 60_000,\n  maxNotificationAttempts: 12,\n});\n\nfunction jsonBody(response) {\n  if (!response || typeof response !== \"object\" || response.error) return null;\n  try {\n    const body = typeof response.body === \"string\"\n      ? response.body.length <= 64 * 1024 ? JSON.parse(response.body) : null\n      : response.body;\n    return body && typeof body === \"object\" && !Array.isArray(body) ? body : null;\n  } catch {\n    return null;\n  }\n}\n\nfunction classifyHealth(response) {\n  const status = Number.isInteger(response?.statusCode) ? response.statusCode : 0;\n  const body = jsonBody(response);\n  const ok = status === 200 && body?.status === \"ok\" && body?.service === \"togaether-weather\";\n  return {\n    ok,\n    component: \"app\",\n    status,\n    reason: ok ? \"App is available\" : status === 0 ? \"App connection failed\" : status !== 200 ? `App returned HTTP ${status}` : \"App health response is invalid\",\n  };\n}\n\nfunction classifyWeather(response, now, locationId = 683506) {\n  const status = Number.isInteger(response?.statusCode) ? response.statusCode : 0;\n  const body = jsonBody(response);\n  const failed = (reason) => ({ ok: false, component: \"weather\", status, reason });\n  if (status === 0) return failed(\"Weather connection failed\");\n  if (status !== 200) return failed(`Weather returned HTTP ${status}`);\n  const weather = body?.weather;\n  const cache = body?.cache;\n  const observed = Date.parse(weather?.observedAt);\n  const fetched = Date.parse(weather?.fetchedAt);\n  if (\n    weather?.location?.id !== locationId ||\n    weather?.units?.temperature !== \"°C\" || weather?.units?.wind !== \"km/h\" ||\n    ![weather?.temperatureC, weather?.windKmh, weather?.highC, weather?.lowC].every((value) => typeof value === \"number\" && Number.isFinite(value)) ||\n    weather.highC < weather.lowC || weather.windKmh < 0 || weather.windKmh > 500 ||\n    [weather.temperatureC, weather.highC, weather.lowC].some((value) => value < -120 || value > 80) ||\n    !Number.isFinite(observed) || !Number.isFinite(fetched) ||\n    observed > now + 15 * 60_000 || now - observed > 150 * 60_000 ||\n    fetched > now + 60_000 || now - fetched > 30 * 60_000 ||\n    !Number.isFinite(cache?.ageSeconds) || cache.ageSeconds < 0 ||\n    ![\"fresh\", \"stale\"].includes(cache?.status) ||\n    (cache.status === \"fresh\" && cache.ageSeconds >= 300)\n  ) return failed(\"Weather response is invalid or obsolete\");\n  if (cache.status === \"stale\" || typeof body.warning === \"string\") {\n    return failed(\"Weather refresh failed and cached conditions are being served\");\n  }\n  return { ok: true, component: \"weather\", status, reason: \"Weather is available\" };\n}\n\nfunction initialMonitorState() {\n  return {\n    version: 1, failureCount: 0, successCount: 0, firstFailureAt: null,\n    lastCheckedAt: null, lastHealthyAt: null, lastReason: null, incident: null,\n  };\n}\n\nfunction createNotification(kind, incident, now, config, reason) {\n  const outage = kind === \"outage\";\n  const payload = {\n    from: config.from,\n    to: [config.to],\n    subject: outage ? \"Fourcast weather API needs attention\" : \"Fourcast weather API recovered\",\n    text: [\n      outage ? \"Three consecutive checks failed.\" : \"Two consecutive checks succeeded after an outage.\",\n      `Dashboard: ${config.origin}`,\n      `Incident: ${incident.id}`,\n      `First failure: ${new Date(incident.firstFailureAt).toISOString()}`,\n      `${outage ? \"Confirmed failure\" : \"Confirmed recovery\"}: ${new Date(now).toISOString()}`,\n      `Reason: ${reason}`,\n      \"This monitor checks app health and the Bucharest weather response.\",\n    ].join(\"\\n\"),\n  };\n  return {\n    kind,\n    key: `fourcast/${incident.id}/${kind}`,\n    payload,\n    firstAttemptAt: null,\n    lastAttemptAt: null,\n    attempts: 0,\n    acceptedAt: null,\n    abandonedAt: null,\n  };\n}\n\nfunction dueNotification(notification, now) {\n  if (!notification || notification.acceptedAt !== null || notification.abandonedAt !== null) return null;\n  if (\n    notification.attempts >= MONITOR_POLICY.maxNotificationAttempts ||\n    (notification.firstAttemptAt !== null && now - notification.firstAttemptAt >= MONITOR_POLICY.retryWindowMs)\n  ) {\n    notification.abandonedAt = now;\n    return null;\n  }\n  if (notification.lastAttemptAt !== null && now - notification.lastAttemptAt < MONITOR_POLICY.retryCooldownMs) return null;\n  notification.firstAttemptAt ??= now;\n  notification.lastAttemptAt = now;\n  notification.attempts += 1;\n  // Both the key and body remain exactly the same throughout all retries.\n  return { kind: notification.kind, key: notification.key, payload: notification.payload };\n}\n\nfunction advanceMonitor(previous, probe, now, incidentId, config) {\n  if (!Number.isFinite(now) || typeof probe?.ok !== \"boolean\") throw new Error(\"Invalid monitor input\");\n  const state = previous ? JSON.parse(JSON.stringify(previous)) : initialMonitorState();\n  if (state.version !== 1 || !Number.isSafeInteger(state.failureCount) || !Number.isSafeInteger(state.successCount)) {\n    throw new Error(\"Unsupported monitor state; review before resetting\");\n  }\n  if (state.lastCheckedAt !== null && now <= state.lastCheckedAt) return { state, notification: null };\n  state.lastCheckedAt = now;\n  state.lastReason = probe.reason;\n\n  if (!probe.ok) {\n    state.successCount = 0;\n    state.failureCount += 1;\n    state.firstFailureAt ??= now;\n    if (state.failureCount >= MONITOR_POLICY.failuresBeforeAlert && (!state.incident || state.incident.closedAt !== null)) {\n      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(incidentId)) throw new Error(\"Invalid incident ID\");\n      state.incident = {\n        id: incidentId, firstFailureAt: state.firstFailureAt, confirmedAt: now,\n        closedAt: null, outage: null, recovery: null,\n      };\n      state.incident.outage = createNotification(\"outage\", state.incident, now, config, probe.reason);\n    }\n    const notification = state.incident?.closedAt === null ? dueNotification(state.incident.outage, now) : null;\n    return { state, notification };\n  }\n\n  state.lastHealthyAt = now;\n  state.failureCount = 0;\n  state.firstFailureAt = null;\n  state.successCount += 1;\n  if (state.incident?.closedAt === null && state.successCount >= MONITOR_POLICY.successesBeforeRecovery) {\n    state.incident.closedAt = now;\n    // Do not send an outage email after recovery if its earlier attempts failed.\n    if (typeof state.incident.outage?.acceptedAt === \"number\") {\n      state.incident.recovery = createNotification(\"recovery\", state.incident, now, config, \"App health and weather are available\");\n    } else if (state.incident.outage) {\n      state.incident.outage.abandonedAt = now;\n    }\n  }\n  const notification = state.incident?.closedAt !== null && state.successCount >= MONITOR_POLICY.successesBeforeRecovery\n    ? dueNotification(state.incident?.recovery, now) : null;\n  return { state, notification };\n}\n\nfunction acknowledgeNotification(previous, key, response, now) {\n  const state = JSON.parse(JSON.stringify(previous));\n  const incident = state.incident;\n  const notification = [incident?.outage, incident?.recovery].find((item) => item?.key === key);\n  if (!notification || notification.acceptedAt !== null || notification.abandonedAt !== null) return state;\n  const body = jsonBody(response);\n  if (\n    !response?.error && Number.isInteger(response?.statusCode) &&\n    response.statusCode >= 200 && response.statusCode < 300 &&\n    typeof body?.id === \"string\" && body.id.length > 0 && body.id.length <= 200\n  ) {\n    notification.acceptedAt = now;\n  }\n  // Discard API bodies and transport messages; they may contain private details.\n  return state;\n}\n\n/** Incident labels do not authorize anything. Prefer the native UUID generator. */\nfunction monitorIncidentId() {\n  if (typeof globalThis.crypto?.randomUUID === \"function\") return globalThis.crypto.randomUUID();\n  return \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, (character) => {\n    const value = Math.floor(Math.random() * 16);\n    return (character === \"x\" ? value : (value & 3) | 8).toString(16);\n  });\n}\n\n\nconst config = {\"origin\":\"__FOURCAST_ORIGIN__\",\"from\":\"__RESEND_FROM__\",\"to\":\"__ALERT_TO__\"};\nconst health = $('Validate app health').first().json;\nconst probe = health.ok ? classifyWeather($input.first().json, Date.now()) : health;\nconst data = $getWorkflowStaticData('global');\nconst result = advanceMonitor(data.fourcastMonitor ?? null, probe, Date.now(), monitorIncidentId(), config);\ndata.fourcastMonitor = result.state;\nreturn [{ json: { notification: result.notification, probe, lastCheckedAt: result.state.lastCheckedAt } }];"
+      }
+    },
+    {
+      "id": "notification_is_due",
+      "name": "Notification is due",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "Notification is due-condition",
+              "leftValue": "={{ $json.notification !== null }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "send_incident_email",
+      "name": "Send incident email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        -100
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "retryOnFail": false,
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.notification.key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.notification.payload) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__RESEND_CREDENTIAL_ID__",
+          "name": "__RESEND_CREDENTIAL_NAME__"
+        }
+      }
+    },
+    {
+      "id": "record_email_acceptance",
+      "name": "Record email acceptance",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        -100
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "/** Pure incident logic shared by fixture tests and the generated n8n Code nodes. */\nconst MONITOR_POLICY = Object.freeze({\n  failuresBeforeAlert: 3,\n  successesBeforeRecovery: 2,\n  retryCooldownMs: 30 * 60_000,\n  retryWindowMs: 23 * 60 * 60_000,\n  maxNotificationAttempts: 12,\n});\n\nfunction jsonBody(response) {\n  if (!response || typeof response !== \"object\" || response.error) return null;\n  try {\n    const body = typeof response.body === \"string\"\n      ? response.body.length <= 64 * 1024 ? JSON.parse(response.body) : null\n      : response.body;\n    return body && typeof body === \"object\" && !Array.isArray(body) ? body : null;\n  } catch {\n    return null;\n  }\n}\n\nfunction classifyHealth(response) {\n  const status = Number.isInteger(response?.statusCode) ? response.statusCode : 0;\n  const body = jsonBody(response);\n  const ok = status === 200 && body?.status === \"ok\" && body?.service === \"togaether-weather\";\n  return {\n    ok,\n    component: \"app\",\n    status,\n    reason: ok ? \"App is available\" : status === 0 ? \"App connection failed\" : status !== 200 ? `App returned HTTP ${status}` : \"App health response is invalid\",\n  };\n}\n\nfunction classifyWeather(response, now, locationId = 683506) {\n  const status = Number.isInteger(response?.statusCode) ? response.statusCode : 0;\n  const body = jsonBody(response);\n  const failed = (reason) => ({ ok: false, component: \"weather\", status, reason });\n  if (status === 0) return failed(\"Weather connection failed\");\n  if (status !== 200) return failed(`Weather returned HTTP ${status}`);\n  const weather = body?.weather;\n  const cache = body?.cache;\n  const observed = Date.parse(weather?.observedAt);\n  const fetched = Date.parse(weather?.fetchedAt);\n  if (\n    weather?.location?.id !== locationId ||\n    weather?.units?.temperature !== \"°C\" || weather?.units?.wind !== \"km/h\" ||\n    ![weather?.temperatureC, weather?.windKmh, weather?.highC, weather?.lowC].every((value) => typeof value === \"number\" && Number.isFinite(value)) ||\n    weather.highC < weather.lowC || weather.windKmh < 0 || weather.windKmh > 500 ||\n    [weather.temperatureC, weather.highC, weather.lowC].some((value) => value < -120 || value > 80) ||\n    !Number.isFinite(observed) || !Number.isFinite(fetched) ||\n    observed > now + 15 * 60_000 || now - observed > 150 * 60_000 ||\n    fetched > now + 60_000 || now - fetched > 30 * 60_000 ||\n    !Number.isFinite(cache?.ageSeconds) || cache.ageSeconds < 0 ||\n    ![\"fresh\", \"stale\"].includes(cache?.status) ||\n    (cache.status === \"fresh\" && cache.ageSeconds >= 300)\n  ) return failed(\"Weather response is invalid or obsolete\");\n  if (cache.status === \"stale\" || typeof body.warning === \"string\") {\n    return failed(\"Weather refresh failed and cached conditions are being served\");\n  }\n  return { ok: true, component: \"weather\", status, reason: \"Weather is available\" };\n}\n\nfunction initialMonitorState() {\n  return {\n    version: 1, failureCount: 0, successCount: 0, firstFailureAt: null,\n    lastCheckedAt: null, lastHealthyAt: null, lastReason: null, incident: null,\n  };\n}\n\nfunction createNotification(kind, incident, now, config, reason) {\n  const outage = kind === \"outage\";\n  const payload = {\n    from: config.from,\n    to: [config.to],\n    subject: outage ? \"Fourcast weather API needs attention\" : \"Fourcast weather API recovered\",\n    text: [\n      outage ? \"Three consecutive checks failed.\" : \"Two consecutive checks succeeded after an outage.\",\n      `Dashboard: ${config.origin}`,\n      `Incident: ${incident.id}`,\n      `First failure: ${new Date(incident.firstFailureAt).toISOString()}`,\n      `${outage ? \"Confirmed failure\" : \"Confirmed recovery\"}: ${new Date(now).toISOString()}`,\n      `Reason: ${reason}`,\n      \"This monitor checks app health and the Bucharest weather response.\",\n    ].join(\"\\n\"),\n  };\n  return {\n    kind,\n    key: `fourcast/${incident.id}/${kind}`,\n    payload,\n    firstAttemptAt: null,\n    lastAttemptAt: null,\n    attempts: 0,\n    acceptedAt: null,\n    abandonedAt: null,\n  };\n}\n\nfunction dueNotification(notification, now) {\n  if (!notification || notification.acceptedAt !== null || notification.abandonedAt !== null) return null;\n  if (\n    notification.attempts >= MONITOR_POLICY.maxNotificationAttempts ||\n    (notification.firstAttemptAt !== null && now - notification.firstAttemptAt >= MONITOR_POLICY.retryWindowMs)\n  ) {\n    notification.abandonedAt = now;\n    return null;\n  }\n  if (notification.lastAttemptAt !== null && now - notification.lastAttemptAt < MONITOR_POLICY.retryCooldownMs) return null;\n  notification.firstAttemptAt ??= now;\n  notification.lastAttemptAt = now;\n  notification.attempts += 1;\n  // Both the key and body remain exactly the same throughout all retries.\n  return { kind: notification.kind, key: notification.key, payload: notification.payload };\n}\n\nfunction advanceMonitor(previous, probe, now, incidentId, config) {\n  if (!Number.isFinite(now) || typeof probe?.ok !== \"boolean\") throw new Error(\"Invalid monitor input\");\n  const state = previous ? JSON.parse(JSON.stringify(previous)) : initialMonitorState();\n  if (state.version !== 1 || !Number.isSafeInteger(state.failureCount) || !Number.isSafeInteger(state.successCount)) {\n    throw new Error(\"Unsupported monitor state; review before resetting\");\n  }\n  if (state.lastCheckedAt !== null && now <= state.lastCheckedAt) return { state, notification: null };\n  state.lastCheckedAt = now;\n  state.lastReason = probe.reason;\n\n  if (!probe.ok) {\n    state.successCount = 0;\n    state.failureCount += 1;\n    state.firstFailureAt ??= now;\n    if (state.failureCount >= MONITOR_POLICY.failuresBeforeAlert && (!state.incident || state.incident.closedAt !== null)) {\n      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(incidentId)) throw new Error(\"Invalid incident ID\");\n      state.incident = {\n        id: incidentId, firstFailureAt: state.firstFailureAt, confirmedAt: now,\n        closedAt: null, outage: null, recovery: null,\n      };\n      state.incident.outage = createNotification(\"outage\", state.incident, now, config, probe.reason);\n    }\n    const notification = state.incident?.closedAt === null ? dueNotification(state.incident.outage, now) : null;\n    return { state, notification };\n  }\n\n  state.lastHealthyAt = now;\n  state.failureCount = 0;\n  state.firstFailureAt = null;\n  state.successCount += 1;\n  if (state.incident?.closedAt === null && state.successCount >= MONITOR_POLICY.successesBeforeRecovery) {\n    state.incident.closedAt = now;\n    // Do not send an outage email after recovery if its earlier attempts failed.\n    if (typeof state.incident.outage?.acceptedAt === \"number\") {\n      state.incident.recovery = createNotification(\"recovery\", state.incident, now, config, \"App health and weather are available\");\n    } else if (state.incident.outage) {\n      state.incident.outage.abandonedAt = now;\n    }\n  }\n  const notification = state.incident?.closedAt !== null && state.successCount >= MONITOR_POLICY.successesBeforeRecovery\n    ? dueNotification(state.incident?.recovery, now) : null;\n  return { state, notification };\n}\n\nfunction acknowledgeNotification(previous, key, response, now) {\n  const state = JSON.parse(JSON.stringify(previous));\n  const incident = state.incident;\n  const notification = [incident?.outage, incident?.recovery].find((item) => item?.key === key);\n  if (!notification || notification.acceptedAt !== null || notification.abandonedAt !== null) return state;\n  const body = jsonBody(response);\n  if (\n    !response?.error && Number.isInteger(response?.statusCode) &&\n    response.statusCode >= 200 && response.statusCode < 300 &&\n    typeof body?.id === \"string\" && body.id.length > 0 && body.id.length <= 200\n  ) {\n    notification.acceptedAt = now;\n  }\n  // Discard API bodies and transport messages; they may contain private details.\n  return state;\n}\n\n/** Incident labels do not authorize anything. Prefer the native UUID generator. */\nfunction monitorIncidentId() {\n  if (typeof globalThis.crypto?.randomUUID === \"function\") return globalThis.crypto.randomUUID();\n  return \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, (character) => {\n    const value = Math.floor(Math.random() * 16);\n    return (character === \"x\" ? value : (value & 3) | 8).toString(16);\n  });\n}\n\n\nconst data = $getWorkflowStaticData('global');\nconst notification = $('Evaluate incident').first().json.notification;\ndata.fourcastMonitor = acknowledgeNotification(data.fourcastMonitor, notification.key, $input.first().json, Date.now());\nreturn [{ json: { incidentId: data.fourcastMonitor.incident?.id, notificationKind: notification.kind, accepted: Boolean(data.fourcastMonitor.incident?.[notification.kind]?.acceptedAt) } }];"
+      }
+    }
+  ],
+  "connections": {
+    "Every five minutes": {
+      "main": [
+        [
+          {
+            "node": "Check app health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check app health": {
+      "main": [
+        [
+          {
+            "node": "Validate app health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate app health": {
+      "main": [
+        [
+          {
+            "node": "App is available",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "App is available": {
+      "main": [
+        [
+          {
+            "node": "Check Bucharest weather",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Evaluate incident",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Bucharest weather": {
+      "main": [
+        [
+          {
+            "node": "Evaluate incident",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate incident": {
+      "main": [
+        [
+          {
+            "node": "Notification is due",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notification is due": {
+      "main": [
+        [
+          {
+            "node": "Send incident email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Send incident email": {
+      "main": [
+        [
+          {
+            "node": "Record email acceptance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Europe/Bucharest",
+    "executionOrder": "v1",
+    "executionTimeout": 60,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "saveManualExecutions": false
+  },
+  "staticData": null
+}

@@ -1,4 +1,5 @@
 import { invalidProviderResponse, WeatherServiceError } from "./errors";
+import { withUpstreamCapacity } from "../operations/capacity";
 
 export type FetchLike = typeof fetch;
 
@@ -11,6 +12,10 @@ export async function fetchWeatherJson(
   timeoutMs = 8_000,
 ): Promise<unknown> {
   if (!ALLOWED_ORIGINS.has(url.origin)) throw new Error("Unsupported weather origin");
+  return withUpstreamCapacity(() => fetchAdmittedWeatherJson(url, fetcher, timeoutMs));
+}
+
+async function fetchAdmittedWeatherJson(url: URL, fetcher: FetchLike, timeoutMs: number): Promise<unknown> {
   try {
     const response = await fetcher(url, {
       headers: { Accept: "application/json" },
