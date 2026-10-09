@@ -199,21 +199,29 @@ export async function collectReport(directory) {
     // Do not copy subprocess output or provider text into the public report.
     report.scanners.npm = failure(null, "npm audit or primary advisory verification failed; coverage is incomplete");
   }
+  let trivyStep = "scanner completion";
   try {
     assert(process.env.IMAGE_BUILD_OUTCOME === "success" && process.env.TRIVY_SCAN_OUTCOME === "success", "Container scan did not run successfully");
+    trivyStep = "pinned scanner version";
     const version = await readFile(resolve(directory, "trivy-version.txt"), "utf8");
     assert(version.includes(`Version: ${TRIVY_VERSION}`), "Scanner version differs from its pin");
+    trivyStep = "ARM64 image metadata";
     const image = (await boundedJson(resolve(directory, "image-inspect.json")))[0];
     assert(image?.Os === "linux" && image?.Architecture === "arm64" && /^sha256:[0-9a-f]{64}$/.test(image.Id ?? ""), "Scanned image identity is invalid");
+    trivyStep = "image source labels";
     assert(image.Config?.Labels?.["org.opencontainers.image.revision"] === commit
       && image.Config?.Labels?.["org.opencontainers.image.source"] === `https://github.com/${REPOSITORY}`, "Scanned image source differs");
+    trivyStep = "Trivy report JSON";
     const result = await boundedJson(resolve(directory, "trivy.json"));
+    trivyStep = "Trivy image identity";
     assert(result.Metadata?.ImageID === image.Id, "Trivy report belongs to another image");
+    trivyStep = "Trivy package findings";
     report.vulnerabilities.push(...trivyFindings(result));
     report.image = { imageId: image.Id, platform: "linux/arm64", sourceCommit: commit, scannerImage: TRIVY_IMAGE,
       purpose: "Fresh main runtime build; not a deployed Pi inventory" };
     report.scanners.trivy = { status: "ok", version: TRIVY_VERSION, scope: "containerOperatingSystemAndRuntimeLibraries" };
   } catch {
+    console.error(`Trivy report verification failed at: ${trivyStep}.`);
     report.scanners.trivy = failure(TRIVY_VERSION, "ARM64 image build or Trivy scan verification failed; coverage is incomplete");
   }
   const completed = finishReport(report);
