@@ -2,11 +2,13 @@
 
 ## Current evidence
 
-The application is not implemented. No weather, image, browser, accessibility, database, or deployment tests have run in this repository.
+The weather application and image adapter boundaries are implemented. Local Node.js 24.21.0 checks pass: ESLint, strict TypeScript, 75 unit and route tests, Markdown lint, a production build, and 28 desktop/mobile browser tests. Dependency audit reports zero known advisories at the check time. Browser tests use deterministic API fixtures; route and adapter tests validate provider payloads separately.
 
-Phase 0 introduces Markdown linting, commit whitespace checks, and a documentation dependency audit as the first GitHub workflow. A passing check proves only those planning repository checks passed.
+The initial planning workflow passed on GitHub. Application CI adds real lint, types, fixtures, dependency advisories, production build, and browser checks on hosted runners without provider keys. A committed workflow alone does not prove its run passed; link final run results in delivery notes.
 
-The target application stack is Next.js 16.4, React 19.3, and Node.js 24. Application test commands will be documented after their scripts exist and have been verified.
+One authorized Gemini image probe returned HTTP 429 for image quotas. Refusal, timeout, and successful image bytes are tested with transports, not live generation. No generated image, durable job, PostgreSQL integration, container, backup restore, Pi deployment, Lighthouse result, or hardware GPU benchmark is verified.
+
+Application commands are in the README. The atmospheric shader and context lifecycle were also exercised with Chromium software rendering, as recorded in the [component notes](../src/components/atmosphere/README.md). Software rendering is not hardware performance evidence. Automated accessibility scores and manual screen reader verification remain future work.
 
 ## Acceptance table
 

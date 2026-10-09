@@ -1,6 +1,10 @@
 # Architecture
 
-Status: proposed, 9 October 2026. This document describes the intended application. The repository currently contains planning documents and documentation checks. No application, provider integration, infrastructure deployment, or production verification is implemented.
+Status: foundation and weather implemented, 9 October 2026. The dashboard, location and weather routes, atmospheric background, deterministic image prompt builder, and server only Gemini adapter exist. Image admission, durable jobs, database, media, containers, and deployment remain proposed. No production readiness or hardware performance is claimed.
+
+Current runtime requires Node.js 24 and npm only. Weather runs without an environment file. The Gemini adapter is not connected to a browser generation route; adding a key does not enable generation. One authorized live image probe returned HTTP 429 for image quota.
+
+Implemented caches are bounded in memory: searches retain results for ten minutes, canonical locations are fresh for 24 hours with a seven day fallback, and weather is fresh for five minutes with a 30 minute labelled fallback. Weather fallback cannot cross the location's date boundary. Identical upstream reads are coalesced. Retry backoff, jitter, shared caching, and request IDs below are future targets.
 
 The product must run locally from a fresh clone and later fit alongside existing projects on a Raspberry Pi 4 with 4 GB RAM. Deployment is a separate stage after the owner supplies Cloudflare tunnel details. Existing repositories, services, networks, and tunnel routes are outside this project's change boundary.
 
@@ -11,23 +15,23 @@ The product must run locally from a fresh clone and later fit alongside existing
 | Application | Next.js 16.4.0, React 19.3.0, TypeScript | One repository for the dashboard and server routes |
 | Runtime | Node.js 24 LTS | Local development, worker, and production runtime |
 | Weather | Open Meteo geocoding and forecast APIs | Structured location matches and numerical weather data |
-| Images | OpenAI Image API through a server adapter | One image from a deterministic weather prompt |
+| Images | Gemini through a server adapter | One image from a deterministic weather prompt; browser integration pending |
 | Persistence | PostgreSQL in local and public modes | Jobs, ownership, quota reservations, and image metadata |
 | Media | Local persistent volume initially | Store generated image bytes outside the database |
 | Production packaging | Docker Compose with independent web and worker services | Isolate resources and restart services separately |
 | Optional later components | Nginx, Redis, S3 compatible storage | Add capabilities only when their launch criteria apply |
 
-The framework versions are proposed scaffold pins, not evidence of application compatibility. Commit the npm lockfile and record the tested Node patch version when the scaffold ships. Node 24 is an LTS release in the [Node release schedule](https://nodejs.org/en/about/previous-releases).
+The framework versions are pinned with the npm lockfile. Local checks use Node.js 24.21.0. Node 24 is an LTS release in the [Node release schedule](https://nodejs.org/en/about/previous-releases).
 
-The proposed image model is `gpt-image-2.5-flare-2026-09-08`. Its snapshot appears in the [official image API reference](https://developers.openai.com/api/reference/resources/images/methods/generate). Account access, request settings, output quality, latency, and cost remain unverified until an authorized live smoke test. Configure one image, a fixed resolution and quality, an opaque background, and normal provider moderation on the server. Record any model change explicitly.
+The configured image model is `gemini-3.1-flash-image`. Server settings request one 16:9 image at 1K. The stable alias is not an immutable model snapshot. A valid credential and model listing were verified; a single live image request returned a quota failure. Live output quality, successful latency, and cost remain unverified. See the [provider record](PROVIDER.md) and [official image guide](https://ai.google.dev/gemini-api/docs/image-generation). Record any model change explicitly.
 
 Open Meteo's free hosted service has noncommercial usage restrictions, rate limits, and attribution requirements. Public availability alone does not establish eligibility. Review the intended portfolio use before launch and retain a paid endpoint configuration path if necessary. [Provider terms](https://open-meteo.com/en/terms).
 
 ## 2. Process and network boundaries
 
-Local development uses Compose for PostgreSQL and one development launcher for the web and worker processes. Production uses the same database implementation with separate containers. Weather browsing can work without an image key; generation explains missing configuration without breaking the cards.
+The future image phase will use Compose for PostgreSQL and one development launcher for web and worker processes. Production will use the same database implementation with separate containers. Today's weather release uses `npm run dev` alone; generation is visibly disabled without breaking the cards.
 
-Local prerequisites are Node.js 24 LTS, npm, and Docker Engine or Docker Desktop with Compose V2. Pin a supported PostgreSQL major and tested image digest in phase 3. For host run development, bind its database port only to loopback; production uses private container networking with no published database port. The documented launcher waits for database readiness, applies migrations, and starts web and worker processes. It forwards shutdown signals and drains or records active work safely. Verify the complete sequence from a clean clone.
+Future image prerequisites include Docker Engine or Docker Desktop with Compose V2. Pin a supported PostgreSQL major and tested image digest in phase 3. For host run development, bind its database port only to loopback; production uses private container networking with no published database port. The future launcher must wait for readiness, apply migrations, start web and worker processes, and forward shutdown signals safely. Verify that sequence from a clean clone before documenting it as working.
 
 ```mermaid
 flowchart TD
@@ -38,7 +42,7 @@ flowchart TD
     Web --> Weather[Open Meteo adapters]
     Web --> DB[(PostgreSQL)]
     DB --> Worker[Generation worker]
-    Worker --> Images[OpenAI Image API]
+    Worker --> Images[Gemini image API]
     Worker --> Media[Local media volume]
     Worker --> DB
     Web --> Media
@@ -103,7 +107,7 @@ Route handlers validate input, call an application service, and serialize a resu
 | `MediaStore.put(key, bytes, metadata)` | Persist media atomically and return a durable object reference |
 | `MediaStore.read(reference)` | Read an authorized object's bytes or mint temporary access after authorization |
 
-Proposed HTTP routes are `GET /api/locations?query=`, `GET /api/weather?locationId=`, `POST /api/generations`, `GET /api/generations/:id`, and `GET /api/media/:id`. Generation accepts exactly four distinct location IDs and an idempotency key. It accepts no client weather values, arbitrary prompt, model, quality, or upstream URL.
+Implemented HTTP routes are `GET /api/locations?q=`, `GET /api/weather?locationId=`, and `GET /api/health`. Proposed image routes are `POST /api/generations`, `GET /api/generations/:id`, and `GET /api/media/:id`. Future generation accepts exactly four distinct location IDs and an idempotency key. It must accept no client weather values, arbitrary prompt, model, quality, or upstream URL.
 
 Successful creation returns `202` with a job ID and status URL. A repeated matching idempotency key returns the existing job; reuse with a different payload returns `409`. Errors use a stable code, readable message, request ID, and retryability indicator without exposing stacks or secrets.
 

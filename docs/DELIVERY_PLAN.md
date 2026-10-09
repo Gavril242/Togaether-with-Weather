@@ -1,6 +1,6 @@
 # Delivery plan
 
-Status: proposed implementation. Planning began on 9 October 2026. The repository does not yet contain the weather application.
+Status: foundation and weather implemented, 9 October 2026. Browser image generation and deployment remain incomplete. The Gemini adapter and prompt builder have fixture tests, but account image quota is unavailable. The sequence below retains the acceptance gates for completing the product.
 
 ## Outcome and boundaries
 
@@ -35,18 +35,18 @@ The image button requires four valid weather results within the allowed freshnes
 | Runtime | Node.js 24 LTS, with the same supported runtime in development, CI, and containers |
 | Initial package baseline | Next.js 16.4.0 and React 19.3.0 were verified from the npm registry during planning; verify supported patch releases again at implementation |
 | Weather and search | Open Meteo; structured responses, place identifiers, timezones, and no credential for eligible demo use |
-| Image provider | OpenAI Images API behind an adapter; proposed `gpt-image-2.5-flare-2026-09-08`, verified for access and visual quality before acceptance |
+| Image provider | Gemini behind a server adapter; `gemini-3.1-flash-image`, with successful live output still required for acceptance |
 | Composition | One landscape image with four coherent panels in selection order; HTML captions remain readable even if model text rendering varies |
 | Durable work | PostgreSQL stores generation jobs, snapshots, ownership, and quota reservations; a separate worker performs slow calls |
-| Local setup | Docker Compose supplies PostgreSQL; the development launcher runs the web app and worker; the final README also supplies a complete Docker path |
+| Local setup | Weather runs with npm alone; future image phase adds PostgreSQL, worker, and a verified Docker path |
 | Media | Local persistent volume with retention and ownership checks; replace through an S3 storage adapter if needed later |
 | Cache | Bounded application cache and request coalescing first; Redis requires measured need |
 | Public entry | Supplied Cloudflare Tunnel, a dedicated hostname, and an origin proxy appropriate to the existing tunnel topology |
 | Operations | Uptime Kuma for service checks; n8n for approved operations outside the weather and generation request path |
 
-The current local machine runs Node.js 25, which is outside the proposed runtime baseline. Implementation must align it with the supported runtime before treating local and CI results as equivalent. The release schedule lists Node.js 24 as LTS. [Node.js releases](https://nodejs.org/en/about/previous-releases)
+Implementation checks use an isolated, checksum verified Node.js 24.21.0 runtime. The host's unrelated Node installation is unchanged. CI selects Node 24 from `.nvmrc`. The release schedule lists Node.js 24 as LTS. [Node.js releases](https://nodejs.org/en/about/previous-releases)
 
-The proposed model snapshot is supported by the Images API. Model parameters and cost controls remain server controlled. Actual access, latency, visual results, and pricing must be checked before selecting the release defaults. [OpenAI Images API](https://developers.openai.com/api/reference/resources/images/methods/generate)
+Gemini model parameters remain server controlled. The selected stable alias supports image output, but the authorized probe returned HTTP 429 for free tier quotas. Successful output, latency, and spending behavior still require verification. See the [provider record](PROVIDER.md) and [Gemini image guide](https://ai.google.dev/gemini-api/docs/image-generation).
 
 Open Meteo's hosted free API has use restrictions, rate limits, and attribution requirements. Confirm that the intended portfolio demo fits the service terms before public launch; use the appropriate subscription if its purpose changes. [Open Meteo terms](https://open-meteo.com/en/terms)
 
@@ -65,7 +65,7 @@ Each phase has its own commits and a reviewable result. Application CI begins wi
 | 6. Usability and performance | Responsive visual polish, React transitions, reduced motion, accessibility review, accurate metadata, measured performance | Keyboard and mobile flows pass; performance reports are retained; no fabricated Lighthouse or deployment claims | `codex/experience` |
 | 7. Pi deployment and handover | Isolated Compose project, supplied tunnel route, health checks, backup and restore, rollback, monitoring, optional n8n integration | Only after deployment stage authorization: local and public probes pass, restore and rollback are exercised, other projects remain unaffected | `codex/pi-release` |
 
-Phases 1 through 3 deliver the complete assignment locally. Phase 4 is required before anonymous public paid generation. Phase 5 prepares deployable artifacts. Phase 7 remains deferred until the owner provides the tunnel details.
+The current increment ships the weather foundation and part of the experience phase, plus the image provider boundary. Phases 1 through 3 must satisfy all gates to deliver the complete assignment locally. Phase 4 is required before anonymous public paid generation. Phase 5 prepares deployable artifacts. Phase 7 remains deferred until the owner provides the tunnel details.
 
 ## Phase detail
 
@@ -176,18 +176,18 @@ Planning can proceed without those inputs. Their dependent actions remain deferr
 
 ## Initial configuration contract
 
-The configuration names below are proposed. Phase 1 must implement validation and document actual defaults in `.env.example`. Blank secrets are required in committed examples.
+Only the Gemini settings and disabled image flag are present in `.env.example` today. The adapter validates its explicit constructor configuration, but the application does not instantiate it yet. The other names below are future configuration contracts. Blank secrets are required in committed examples.
 
 | Configuration | Intended behavior |
 | :--- | :--- |
-| `OPENAI_API_KEY` | Server and worker secret; generation unavailable when absent |
-| `IMAGE_MODEL`, `IMAGE_QUALITY`, `IMAGE_SIZE` | Server allowlist; fixed settings rather than browser parameters |
+| `GEMINI_API_KEY` | Server and worker secret; generation unavailable when absent |
+| `GEMINI_IMAGE_MODEL` | Server allowlist; adapter currently fixes 16:9 and 1K rather than accepting browser settings |
 | `DATABASE_URL` | Project database credential; required for durable image jobs |
 | `APP_ORIGIN` | Exact local or public origin used by state changing request checks |
 | `SESSION_SECRET` | Server secret with validated length and rotation policy |
 | `GENERATION_MAX_ACTIVE`, `GENERATION_MAX_QUEUED` | Finite global capacity with one active generation initially |
 | `GENERATION_DAILY_LIMIT`, `GENERATION_DAILY_BUDGET` | Durable admission caps; paid public submission disabled if invalid |
-| `GENERATION_ENABLED` | Operator kill switch that does not disable weather browsing |
+| `IMAGE_GENERATION_ENABLED` | Future admission switch; currently false, no active generation route |
 | `MEDIA_DIRECTORY`, `MEDIA_MAX_BYTES`, `MEDIA_RETENTION_DAYS` | Bounded persistent media storage and retention |
 | `TURNSTILE_SECRET_KEY`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Private verification secret and intentionally public widget identifier |
 | `WEATHER_API_BASE_URL` | Server controlled free or subscribed provider endpoint |
