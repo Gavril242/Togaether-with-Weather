@@ -1,0 +1,71 @@
+.host {
+  --daylight: 0.35;
+  --twilight: 0;
+  position: fixed;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: linear-gradient(180deg, #09101d, #122033 70%, #0d1927);
+  contain: strict;
+}
+
+.day,
+.twilight,
+.clouds,
+.canvasMount,
+.veil {
+  position: absolute;
+  inset: 0;
+}
+
+.day {
+  opacity: var(--daylight);
+  background: radial-gradient(ellipse at 72% 28%, #597c7c66, transparent 55%),
+    linear-gradient(180deg, #193a50, #354b55 70%, #152b39);
+}
+
+.twilight {
+  opacity: calc(var(--twilight) * 0.38);
+  background: radial-gradient(ellipse at 40% 75%, #a5704c 0%, #764f5222 60%, transparent);
+}
+
+.clouds {
+  opacity: 0.16;
+  background: radial-gradient(ellipse at 18% 13%, #a4b5c566, transparent 30%),
+    radial-gradient(ellipse at 61% 25%, #b2c0c366, transparent 33%),
+    radial-gradient(ellipse at 92% 12%, #b0bbc655, transparent 22%);
+}
+
+.host[data-condition="cloudy"] .clouds,
+.host[data-condition="rain"] .clouds,
+.host[data-condition="storm"] .clouds,
+.host[data-condition="snow"] .clouds {
+  opacity: 0.40;
+}
+
+.host[data-condition="fog"] .clouds {
+  opacity: calc(0.30 + var(--intensity) * 0.15);
+  background: linear-gradient(transparent 8%, #94a8b033 75%, #94a8b055);
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 900ms ease;
+}
+
+.host[data-renderer="balanced"] .canvas,
+.host[data-renderer="low"] .canvas {
+  opacity: 1;
+}
+
+.veil {
+  background: radial-gradient(ellipse at 50% 16%, transparent 0%, #080f1933 55%, #080f1980 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas { transition: none; }
+}

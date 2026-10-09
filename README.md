@@ -1,38 +1,52 @@
 # Togaether with Weather
 
-A weather dashboard for four places, with one AI image built from their weather.
+Fourcast is a dashboard for four places, their weather, local clocks, and an atmospheric sky.
 
-## Status
+## Run locally
 
-This repository currently contains the implementation plan and documentation checks. The application has not been built yet. No deployment has been performed.
-
-Read the [delivery plan](docs/DELIVERY_PLAN.md), [architecture](docs/ARCHITECTURE.md), and [verification strategy](docs/VERIFICATION.md).
-
-## Check this planning release
-
-Use Node.js 24 LTS and npm.
+Use Node.js 24 LTS and npm. Development was verified with Node.js 24.21.0.
 
 ```sh
 git clone https://github.com/Gavril242/Togaether-with-Weather.git
 cd Togaether-with-Weather
 npm ci
-npm run docs:lint
+npm run dev -- --port 3100
 ```
 
-The application release will document exact commands for local development and Docker, including its image provider configuration. Those commands will be tested from a fresh clone before that release.
+Open <http://127.0.0.1:3100>. No key, environment file, account, or database is required for weather. Choose a specific search match, add four places, and reload to restore them. Remove a place to replace it. Each card can retry independently.
 
-## Proposed providers
+For a production build, stop the development server and run:
 
-Open Meteo supplies geocoding and weather. Its structured data supports place disambiguation, current conditions, daily temperatures, and timezones. The public demo must include attribution and comply with the provider's service terms.
+```sh
+npm run build
+npm run start -- --port 3100
+```
 
-OpenAI supplies image generation through a server adapter. The proposed model is `gpt-image-2.5-flare-2026-09-08`, subject to an actual account access and output quality check. Weather values and the displayed prompt are constructed in code. Keys will stay on the server.
+## Providers and visuals
 
-## Remaining work
+Open Meteo supplies place lookup and every weather reading. It provides structured data and timezones without a key for eligible demo use. Celsius and km/h are requested explicitly. The footer links to the provider. Review its [service terms](https://open-meteo.com/en/terms) before public use.
 
-Location search, weather cards, generated images, application tests, production containers, and deployment are planned. The first release must satisfy the complete assignment, including durable image jobs. A later public release adds abuse protection, stricter spending limits, backups, monitoring, and tested rollback.
+Gemini `gemini-3.1-flash-image` is the selected image provider because it supports image output without a local GPU. Its server adapter requests one 16:9, 1K image. The deterministic prompt builder uses four validated weather snapshots. Credentials stay server side. Optional future configuration is documented in [.env.example](.env.example) and the [provider record](docs/PROVIDER.md).
 
-With one additional day after the working local release, the priority is restart recovery and protection for paid generation, followed by browser failure tests and accessibility verification.
+The Three.js background follows the focused place's local time and conditions. Clouds, rain, snow, fog, and thunder glow use bounded rendering. Reduced motion and constrained devices use a static sky. Dawn and dusk are stylized, not calculated sunrise. React Bits SpotlightCard is adapted with its [license retained](src/components/reactbits/LICENSE.txt). Hardware performance has not been benchmarked.
 
-## AI use
+## Current limits
 
-Codex inspected the existing project, checked its tests and workflows, researched official documentation, and drafted this plan. Parallel agents reviewed frontend behavior, backend boundaries, and infrastructure. No existing application code was copied into this repository. Unsupported deployment and performance claims from the old project were excluded. Future implementation commits will record AI contributions and the changes made after review in [the development record](docs/AI_USE.md).
+Image generation is disabled in this release. The adapter and prompt builder have fixture tests; browser integration, durable jobs, storage, ownership, and spending controls remain to be shipped. Adding an image key does not enable the button. One authorized Gemini image request returned HTTP 429 because the supplied project has no usable image quota. No image was generated.
+
+With one more day, finish durable generation and immutable prompt/media storage, then verify one live image after image quota is available. Containers, public abuse controls, backup recovery, and deployment remain separate gates. No Raspberry Pi services or tunnels have been changed.
+
+## Checks and AI use
+
+```sh
+npm run lint
+npm run typecheck
+npm test
+npm run docs:lint
+npx playwright install chromium
+npm run test:browser
+```
+
+Browser tests use a production server on port 3100 and provider fixtures. Keep that port free. Ordinary checks make no paid image calls.
+
+Codex built the app from the assignment and architecture plan. Parallel agents implemented weather adapters, reviewed provider boundaries, built the sky, and tested user flows. Review corrected stale background data, hidden keyboard selection, dependency advisories, and inaccessible control names. The expensive example cloud renderer was replaced with a smaller shader. The complete [development record](docs/AI_USE.md), [delivery plan](docs/DELIVERY_PLAN.md), and [architecture](docs/ARCHITECTURE.md) distinguish shipped behavior from future work.
