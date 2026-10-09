@@ -68,8 +68,8 @@ export const fragmentShader = `
     vec2 landscape = vec2(uv.x * uAspect, uv.y);
     vec3 nightTop = vec3(0.019, 0.027, 0.049);
     vec3 nightBottom = vec3(0.039, 0.062, 0.094);
-    vec3 dayTop = vec3(0.081, 0.167, 0.229);
-    vec3 dayBottom = vec3(0.175, 0.262, 0.294);
+    vec3 dayTop = vec3(0.145, 0.315, 0.435);
+    vec3 dayBottom = vec3(0.29, 0.405, 0.43);
     vec3 top = mix(nightTop, dayTop, uDaylight);
     vec3 bottom = mix(nightBottom, dayBottom, uDaylight);
     vec3 color = mix(bottom, top, smoothstep(0.0, 0.95, uv.y));
@@ -78,8 +78,10 @@ export const fragmentShader = `
 
     vec2 sunDelta = vec2((uv.x - uSun.x) * uAspect, uv.y - uSun.y);
     float glow = exp(-dot(sunDelta, sunDelta) * 5.0);
-    color += mix(vec3(0.20, 0.115, 0.06), vec3(0.16, 0.21, 0.20), uDaylight) *
-      glow * (0.14 + 0.26 * uDaylight) * (1.0 - uCloudiness * 0.6);
+    color += mix(vec3(0.20, 0.115, 0.06), vec3(0.22, 0.25, 0.22), uDaylight) *
+      glow * (0.14 + 0.42 * uDaylight) * (1.0 - uCloudiness * 0.6);
+    float clearHaze = exp(-dot(sunDelta, sunDelta) * 1.65) * uDaylight * (1.0 - uCloudiness);
+    color += vec3(0.22, 0.18, 0.105) * clearHaze * 0.11;
 
     vec2 starGrid = landscape * vec2(106.0, 72.0);
     float starSeed = hash(floor(starGrid));

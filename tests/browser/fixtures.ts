@@ -5,6 +5,7 @@ import { localDateAt, type WeatherResponse } from "../../src/domain/weather";
 export const CLOCK_TIME = "2026-10-09T17:05:00.000Z";
 export const STORAGE_KEY = "fourcast.locations.v1";
 export const COOKIE_NAME = "fourcast_places_v1";
+export const CONSENT_COOKIE_NAME = "fourcast_consent_v1";
 
 export const places: Record<string, Location> = {
   springfieldIllinois: { id: 4250542, name: "Springfield", latitude: 39.80172, longitude: -89.64371, timezone: "America/Chicago", country: "United States", countryCode: "US", admin1: "Illinois" },
@@ -42,7 +43,11 @@ export function weatherFor(location: Location): WeatherResponse {
 }
 
 /** Browser behavior uses deterministic provider-shaped fixtures, never live APIs. */
-export async function mockDashboardApi(page: Page) {
+export async function mockDashboardApi(page: Page, options: { consent?: "allow" | "undecided" } = {}) {
+  if (options.consent !== "undecided") {
+    await page.context().addCookies([{ name: CONSENT_COOKIE_NAME, value: "allow", url: "http://127.0.0.1", sameSite: "Lax", expires: Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60 }]);
+    await page.addInitScript(() => { try { localStorage.setItem("fourcast.consent.v1", "allow"); } catch { /* The native cookie carries this fixture's previous choice. */ } });
+  }
   const failingWeather = new Set<number>();
   const failingSearches = new Set<string>();
   const requestedWeather: number[] = [];

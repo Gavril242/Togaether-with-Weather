@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodePlaceCookie, encodePlaceCookie, PLACES_COOKIE, placeCookieHeader, placeIdsQuerySchema, readPlaceCookie } from "../src/features/locations/cookie";
+import { CONSENT_COOKIE, consentCookieHeader, decodePlaceCookie, encodePlaceCookie, expiredPreferenceCookies, hasCookieConsent, PLACES_COOKIE, placeCookieHeader, placeIdsQuerySchema, readPlaceCookie } from "../src/features/locations/cookie";
 
 describe("location preference cookie", () => {
   it("stores only a version and up to four distinct canonical IDs", () => {
@@ -31,5 +31,24 @@ describe("location preference cookie", () => {
     for (const query of ["", "1,1", "1,2,3,4,5", "https://localhost", "2643743.1850147", "0", "001", "2147483648"]) {
       expect(placeIdsQuerySchema.safeParse(query).success).toBe(false);
     }
+  });
+
+  it("requires one exact affirmative consent cookie, including during legacy migration", () => {
+    expect(hasCookieConsent(`${PLACES_COOKIE}=1.123`)).toBe(false);
+    expect(hasCookieConsent(`${CONSENT_COOKIE}=allow; unrelated=value`)).toBe(true);
+    for (const value of ["allowed", "tab", "true", "", "Allow", "allow%20"]) {
+      expect(hasCookieConsent(`${CONSENT_COOKIE}=${value}`)).toBe(false);
+    }
+    expect(hasCookieConsent(`${CONSENT_COOKIE}=allow; ${CONSENT_COOKIE}=allow`)).toBe(false);
+  });
+
+  it("uses the same host scope and HTTPS attributes for acceptance and revocation", () => {
+    expect(consentCookieHeader(true)).toBe(`${CONSENT_COOKIE}=allow; Path=/; Max-Age=31536000; SameSite=Lax; Secure`);
+    expect(consentCookieHeader(false)).not.toContain("Secure");
+    expect(expiredPreferenceCookies(true)).toEqual([
+      `${PLACES_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax; Secure`,
+      `${CONSENT_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax; Secure`,
+    ]);
+    expect(expiredPreferenceCookies(false).join(" ")).not.toContain("Domain=");
   });
 });

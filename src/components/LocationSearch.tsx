@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import { Search, MapPin, LoaderCircle, ArrowUpRight } from "lucide-react";
 import { locationLabel, type Location, type LocationsResponse } from "@/domain/locations";
 import { addLocation } from "@/features/locations/store";
+import { readApiJson } from "@/lib/read-api-json";
 
 export function LocationSearch({ full, inputRef }: { full: boolean; inputRef?: RefObject<HTMLInputElement | null> }) {
   const [query, setQuery] = useState("");
@@ -22,10 +23,10 @@ export function LocationSearch({ full, inputRef }: { full: boolean; inputRef?: R
     const timeout = window.setTimeout(async () => {
       try {
         const response = await fetch(`/api/locations?q=${encodeURIComponent(query.trim())}`, { signal: controller.signal });
-        const data = await response.json();
+        const data = await readApiJson<LocationsResponse & { error?: { message?: string } }>(response, "Place search is temporarily unavailable. Please try again.");
         if (!response.ok) throw new Error(data.error?.message ?? "Place search is unavailable. Please try again.");
         if (controller.signal.aborted) return;
-        setResults((data as LocationsResponse).locations);
+        setResults(data.locations);
         setStatus("ready");
       } catch (error) {
         if (controller.signal.aborted) return;

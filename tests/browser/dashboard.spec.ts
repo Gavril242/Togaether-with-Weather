@@ -117,6 +117,31 @@ test("reports a nonexistent place and a failed search without removing existing 
   await expect(card(page, "Tokyo")).toContainText("Moderate rain");
 });
 
+test("clicking a weather card changes the selected local sky", async ({ page }) => {
+  await mockDashboardApi(page);
+  await seedPlaces(page, [places.london, places.tokyo]);
+  await page.goto("/");
+  const tokyo = card(page, "Tokyo");
+  await expect(tokyo.getByRole("button", { name: "Focus sky for Tokyo" })).toHaveAttribute("aria-pressed", "false");
+  await tokyo.getByRole("heading", { name: "Tokyo" }).click();
+  await expect(tokyo.getByRole("button", { name: "In focus for Tokyo" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".hero-note")).toContainText("Tokyo");
+  await expect(page.locator("[data-condition]")).toHaveAttribute("data-condition", "rain");
+});
+
+test("shows a clear retry message when a gateway returns HTML for a spaced city search", async ({ page }) => {
+  await mockDashboardApi(page);
+  await page.route("**/api/locations?q=New%20York", route => route.fulfill({
+    status: 502,
+    contentType: "text/html",
+    body: "<!DOCTYPE html><title>Bad gateway</title>",
+  }));
+  await page.goto("/");
+  await search(page).fill("New York");
+  await expect(page.locator(".search-area p[role=alert]")).toContainText("Place search is temporarily unavailable. Please try again.");
+  await expect(page.locator(".search-area p[role=alert]")).not.toContainText("Unexpected token");
+});
+
 test("recovers from corrupt persisted locations with a clear message", async ({ page }) => {
   await mockDashboardApi(page);
   await page.addInitScript((key) => localStorage.setItem(key, "{broken-json"), STORAGE_KEY);
@@ -228,7 +253,9 @@ test("blocked cookies and storage keep selections usable and explain the reload 
   await page.goto("/");
   await choosePlace(page, "London", /United Kingdom/);
   await expect(card(page, "London")).toContainText("Moderate rain");
-  await expect(page.getByRole("alert").filter({ hasText: "Your browser could not save this change" })).toBeVisible();
+  const allowCookies = page.getByRole("button", { name: "Allow cookies", exact: true });
+  if (await allowCookies.isVisible()) await allowCookies.click();
+  await expect(page.getByRole("alert").filter({ hasText: "Your browser could not save" })).toBeVisible();
   await choosePlace(page, "Tokyo", /Japan/);
   await expect(card(page, "Tokyo")).toContainText("Moderate rain");
   await expect(page.getByText("2 of 4 places", { exact: true })).toBeVisible();

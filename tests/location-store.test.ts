@@ -9,16 +9,26 @@ let jar: string;
 let lastCookie: string;
 let cookieWritable: boolean;
 let localWritable: boolean;
+let consentCookie: string;
+let sessions: Map<string, string>;
 let fetcher: ReturnType<typeof vi.fn>;
 let store: typeof import("../src/features/locations/store");
 
 beforeEach(async () => {
   vi.resetModules();
   values = new Map(); jar = ""; lastCookie = ""; cookieWritable = true; localWritable = true;
+  consentCookie = "fourcast_consent_v1=allow";
+  sessions = new Map();
   fetcher = vi.fn();
   const documentStub = Object.defineProperty({}, "cookie", {
-    get: () => jar,
-    set: (value: string) => { lastCookie = value; if (cookieWritable) jar = value.split(";")[0]; },
+    get: () => [consentCookie, jar].filter(Boolean).join("; "),
+    set: (value: string) => {
+      lastCookie = value;
+      if (!cookieWritable) return;
+      const stored = value.includes("Max-Age=0") ? "" : value.split(";")[0];
+      if (value.startsWith("fourcast_consent_v1=")) consentCookie = stored;
+      else jar = stored;
+    },
   });
   vi.stubGlobal("document", documentStub);
   vi.stubGlobal("window", {
@@ -26,7 +36,9 @@ beforeEach(async () => {
     localStorage: {
       getItem: (name: string) => values.get(name) ?? null,
       setItem: (name: string, value: string) => { if (!localWritable) throw new Error("Storage unavailable"); values.set(name, value); },
+      removeItem: (name: string) => { if (!localWritable) throw new Error("Storage unavailable"); values.delete(name); },
     },
+    sessionStorage: { getItem: (name: string) => sessions.get(name) ?? null, setItem: (name: string, value: string) => sessions.set(name, value), removeItem: (name: string) => sessions.delete(name) },
     addEventListener: vi.fn(), removeEventListener: vi.fn(),
   });
   vi.stubGlobal("fetch", fetcher);
@@ -144,5 +156,99 @@ describe("selection cookie persistence", () => {
   it("keeps the server snapshot empty until browser hydration", () => {
     vi.stubGlobal("window", undefined);
     expect(store.getSelection()).toBe(store.EMPTY_SELECTION);
+  });
+
+  it("makes no preference writes before an explicit choice, including legacy migration", () => {
+    consentCookie = "";
+    const legacy = JSON.stringify({ version: 1, locations: [london] });
+    values.set(key, legacy);
+    store.subscribeSelection(() => {});
+    expect(store.getConsent()).toBe("undecided");
+    store.addLocation(tokyo);
+    expect(store.getSelection().locations).toEqual([london, tokyo]);
+    expect(values.get(key)).toBe(legacy);
+    expect(jar).toBe("");
+    expect(lastCookie).toBe("");
+    expect(sessions.size).toBe(0);
+  });
+
+  it("acceptance persists the current choices and explicit consent", () => {
+    consentCookie = "";
+    store.addLocation(london);
+    store.chooseConsent("allow");
+    expect(store.getConsent()).toBe("allow");
+    expect(consentCookie).toBe("fourcast_consent_v1=allow");
+    expect(jar).toBe("fourcast_places_v1=1.2643743");
+    expect(values.get("fourcast.consent.v1")).toBe("allow");
+  });
+
+  it("tab-only choice erases persistent data while retaining this tab's selection", async () => {
+    store.addLocation(london);
+    store.chooseConsent("tab");
+    expect(consentCookie).toBe("");
+    expect(jar).toBe("");
+    expect(values.has(key)).toBe(false);
+    expect(sessions.get("fourcast.consent.session.v1")).toBe("tab");
+    expect(store.getSelection().locations).toEqual([london]);
+    vi.resetModules();
+    store = await import("../src/features/locations/store");
+    expect(store.getConsent()).toBe("tab");
+    expect(store.getSelection().locations).toEqual([london]);
+  });
+
+  it("reset removes only this app's saved preferences and asks again", () => {
+    values.set("unrelated", "preserve");
+    store.addLocation(london);
+    store.resetPreferences();
+    expect(store.getConsent()).toBe("undecided");
+    expect(store.getSelection().locations).toEqual([]);
+    expect(jar).toBe("");
+    expect(consentCookie).toBe("");
+    expect(values.get("unrelated")).toBe("preserve");
+    expect(sessions.size).toBe(0);
+  });
+
+  it("legacy cookie restoration stays read-only until consent and can be accepted while pending", async () => {
+    consentCookie = "";
+    jar = "fourcast_places_v1=1.2643743";
+    let release!: (response: Response) => void;
+    fetcher.mockImplementation(() => new Promise<Response>((resolve) => { release = resolve; }));
+    store.subscribeSelection(() => {});
+    expect(lastCookie).toBe("");
+    store.chooseConsent("allow");
+    expect(jar).toBe("fourcast_places_v1=1.2643743");
+    release(Response.json({ locations: [london], unavailableIds: [] }));
+    await vi.waitFor(() => expect(store.getSelection().locations).toEqual([london]));
+    expect(values.get(key)).toContain("London");
+  });
+
+  it("restores a cross-tab update once for multiple UI subscribers", async () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const unsubscribeFirst = store.subscribeSelection(first);
+    const unsubscribeSecond = store.subscribeSelection(second);
+    expect(window.addEventListener).toHaveBeenCalledTimes(1);
+    jar = "fourcast_places_v1=1.2643743";
+    fetcher.mockResolvedValue(Response.json({ locations: [london], unavailableIds: [] }));
+    const handler = vi.mocked(window.addEventListener).mock.calls[0][1] as (event: StorageEvent) => void;
+    handler({ key } as StorageEvent);
+    await vi.waitFor(() => expect(store.getSelection().locations).toEqual([london]));
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(first).toHaveBeenCalled();
+    expect(second).toHaveBeenCalled();
+    unsubscribeFirst();
+    expect(window.removeEventListener).not.toHaveBeenCalled();
+    unsubscribeSecond();
+    expect(window.removeEventListener).toHaveBeenCalledWith("storage", handler);
+  });
+
+  it("reports reset failure honestly when session storage refuses to clear", () => {
+    store.addLocation(london);
+    store.chooseConsent("tab");
+    window.sessionStorage.removeItem = () => { throw new Error("Storage unavailable"); };
+    store.resetPreferences();
+    expect(store.getConsent()).toBe("undecided");
+    expect(store.getSelection().locations).toEqual([]);
+    expect(store.getSelection().storageError).toContain("could not be cleared");
   });
 });

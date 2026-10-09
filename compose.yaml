@@ -24,6 +24,7 @@ services:
       PORT: "3000"
       NODE_OPTIONS: "--max-old-space-size=256"
       TRUST_CLOUDFLARE_PROXY: "true"
+      APP_PUBLIC_ORIGIN: "https://fourcast.misaland.me"
     ports:
       - "127.0.0.1:3102:3000"
     tmpfs:

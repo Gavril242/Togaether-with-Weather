@@ -20,8 +20,14 @@
 }
 
 .day {
-  opacity: var(--daylight);
-  background: radial-gradient(ellipse at 72% 28%, #597c7c66, transparent 55%),
+  opacity: calc(0.2 + var(--daylight) * 0.72);
+  background: radial-gradient(ellipse at 72% 28%, #597c7c88, transparent 55%),
+    linear-gradient(180deg, #193a50, #354b55 70%, #152b39);
+}
+
+.host[data-condition="clear"] .day {
+  background: radial-gradient(ellipse at 72% 24%, #ffe2a888 0%, #e8b77744 18%, transparent 48%),
+    radial-gradient(ellipse at 70% 30%, #597c7c66, transparent 58%),
     linear-gradient(180deg, #193a50, #354b55 70%, #152b39);
 }
 
@@ -36,6 +42,8 @@
     radial-gradient(ellipse at 61% 25%, #b2c0c366, transparent 33%),
     radial-gradient(ellipse at 92% 12%, #b0bbc655, transparent 22%);
 }
+
+.host[data-condition="clear"] .clouds { opacity: 0.025; }
 
 .host[data-condition="cloudy"] .clouds,
 .host[data-condition="rain"] .clouds,

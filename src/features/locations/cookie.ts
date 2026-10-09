@@ -3,6 +3,7 @@ import { locationIdSchema } from "@/domain/locations";
 
 export const PLACES_COOKIE = "fourcast_places_v1";
 export const PLACES_COOKIE_MAX_AGE = 365 * 24 * 60 * 60;
+export const CONSENT_COOKIE = "fourcast_consent_v1";
 export const placeIdsSchema = z.array(locationIdSchema).max(4).refine((ids) => new Set(ids).size === ids.length);
 export const placeIdsQuerySchema = z.string().max(43).regex(/^[1-9]\d{0,9}(?:,[1-9]\d{0,9}){0,3}$/)
   .transform((value) => value.split(",").map(Number)).pipe(placeIdsSchema);
@@ -29,4 +30,17 @@ export function readPlaceCookie(cookieHeader: string): { present: boolean; ids: 
 
 export function placeCookieHeader(ids: number[], secure: boolean): string {
   return `${PLACES_COOKIE}=${encodePlaceCookie(ids)}; Path=/; Max-Age=${PLACES_COOKIE_MAX_AGE}; SameSite=Lax${secure ? "; Secure" : ""}`;
+}
+
+export function hasCookieConsent(cookieHeader: string): boolean {
+  const matches = cookieHeader.split(";").map((part) => part.trim()).filter((part) => part.startsWith(`${CONSENT_COOKIE}=`));
+  return matches.length === 1 && matches[0] === `${CONSENT_COOKIE}=allow`;
+}
+
+export function consentCookieHeader(secure: boolean): string {
+  return `${CONSENT_COOKIE}=allow; Path=/; Max-Age=${PLACES_COOKIE_MAX_AGE}; SameSite=Lax${secure ? "; Secure" : ""}`;
+}
+
+export function expiredPreferenceCookies(secure: boolean): string[] {
+  return [PLACES_COOKIE, CONSENT_COOKIE].map((name) => `${name}=; Path=/; Max-Age=0; SameSite=Lax${secure ? "; Secure" : ""}`);
 }
