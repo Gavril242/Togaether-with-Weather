@@ -55,7 +55,7 @@ jobs:
           scanner='aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa'
           docker run --rm "$scanner" --version > security/trivy-version.txt
           docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges \
-            --user "$(id -u):$(id -g)" --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --user "$(id -u):$(id -g)" --tmpfs /tmp:rw,noexec,nosuid,size=512m \
             --mount "type=bind,src=$PWD/security,dst=/report" \
             --mount "type=bind,src=$PWD/.cache/trivy,dst=/cache" \
             --mount "type=bind,src=$RUNNER_TEMP/fourcast-scan.tar,dst=/image.tar,readonly" \
