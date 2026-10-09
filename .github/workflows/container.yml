@@ -82,12 +82,37 @@ jobs:
           set -euo pipefail
           mkdir release
           docker image inspect "$FOURCAST_IMAGE" > release/image-inspect.json
-          docker save "$FOURCAST_IMAGE" | gzip -n > release/fourcast-arm64.tar.gz
+          docker save --platform linux/arm64 "$FOURCAST_IMAGE" | gzip -n > release/fourcast-arm64.tar.gz
           node --input-type=module <<'NODE'
           import { createHash } from 'node:crypto';
+          import { execFile } from 'node:child_process';
           import { createReadStream } from 'node:fs';
           import { readFile, writeFile, unlink } from 'node:fs/promises';
+          import { isDeepStrictEqual, promisify } from 'node:util';
           const inspect = JSON.parse(await readFile('release/image-inspect.json', 'utf8'))[0];
+          const execute = promisify(execFile);
+          async function readArchiveMember(member, limit) {
+            const { stdout } = await execute('tar', ['-xOzf', 'release/fourcast-arm64.tar.gz', '--', member],
+              { encoding: 'buffer', maxBuffer: limit, timeout: 60000 });
+            if (stdout.length > limit) throw new Error('Archive metadata exceeds its size limit');
+            return stdout;
+          }
+          const entries = JSON.parse(await readArchiveMember('manifest.json', 65536));
+          if (!Array.isArray(entries) || entries.length !== 1 || !isDeepStrictEqual(entries[0].RepoTags, [process.env.FOURCAST_IMAGE])) {
+            throw new Error('Archive must contain only the expected image tag');
+          }
+          const configPath = entries[0].Config;
+          const addressed = typeof configPath === 'string' && configPath.match(/^(?:blobs\/sha256\/([0-9a-f]{64})|([0-9a-f]{64})\.json)$/);
+          if (!addressed) throw new Error('Archive config member path is invalid');
+          const configBytes = await readArchiveMember(configPath, 256 * 1024);
+          const imageConfigDigest = `sha256:${createHash('sha256').update(configBytes).digest('hex')}`;
+          if (imageConfigDigest !== `sha256:${addressed[1] || addressed[2]}`) throw new Error('Archive config digest differs from its path');
+          const config = JSON.parse(configBytes);
+          if (config.os !== inspect.Os || config.architecture !== inspect.Architecture
+            || !isDeepStrictEqual(config.rootfs?.diff_ids, inspect.RootFS?.Layers)) throw new Error('Archive root filesystem identity differs');
+          for (const [key, value] of Object.entries(config.config ?? {})) {
+            if (!isDeepStrictEqual(inspect.Config?.[key], value)) throw new Error(`Archive runtime configuration differs: ${key}`);
+          }
           const hash = createHash('sha256');
           for await (const chunk of createReadStream('release/fourcast-arm64.tar.gz')) hash.update(chunk);
           const archiveSha256 = hash.digest('hex');
@@ -102,6 +127,7 @@ jobs:
             platform: `${inspect.Os}/${inspect.Architecture}`,
             image: process.env.FOURCAST_IMAGE,
             imageId: inspect.Id,
+            imageConfigDigest,
             archive: 'fourcast-arm64.tar.gz',
             archiveSha256,
             nodeBase: 'node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20',

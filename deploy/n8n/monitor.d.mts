@@ -16,7 +16,7 @@ export type MonitorState = {
   incident: MonitorIncident | null;
 };
 export type NotificationRequest = Pick<Notification, "kind" | "key" | "payload">;
-export type HttpResult = { statusCode?: number; body?: unknown; error?: unknown };
+export type HttpResult = { statusCode?: number; body?: unknown; data?: unknown; error?: unknown };
 export const MONITOR_POLICY: Readonly<{
   failuresBeforeAlert: number; successesBeforeRecovery: number;
   retryCooldownMs: number; retryWindowMs: number; maxNotificationAttempts: number;

@@ -16,6 +16,7 @@ import platform
 import re
 import subprocess
 import sys
+import tarfile
 import tempfile
 import urllib.request
 
@@ -52,6 +53,66 @@ def read_json(path):
     value = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=pairs)
     require(isinstance(value, dict), "Metadata must be a JSON object")
     return value
+
+
+def archive_identity(archive, manifest, image):
+    # Read bounded metadata without extracting archive paths onto the host.
+    with tarfile.open(archive, "r:gz") as saved:
+        members = {}
+        for member in saved:
+            require(len(members) < 10000, "Image archive contains too many entries")
+            require(member.name not in members, "Image archive contains duplicate paths")
+            members[member.name] = member
+
+        def metadata(name, limit):
+            member = members.get(name)
+            require(member is not None and member.isfile() and member.size <= limit,
+                    "Image archive metadata is absent, linked or oversized")
+            source = saved.extractfile(member)
+            require(source is not None, "Image archive metadata cannot be read")
+            with source:
+                value = source.read(limit + 1)
+            require(len(value) <= limit, "Image archive metadata exceeds its size limit")
+            return value
+
+        entries = json.loads(metadata("manifest.json", 65536))
+        require(isinstance(entries, list) and len(entries) == 1 and isinstance(entries[0], dict),
+                "Image archive must contain exactly one saved image")
+        entry = entries[0]
+        require(entry.get("RepoTags") == [image], "Image archive tags differ from the verified weather image")
+        path = entry.get("Config", "")
+        require(isinstance(path, str) and re.fullmatch(r"(?:blobs/sha256/([0-9a-f]{64})|([0-9a-f]{64})\.json)", path),
+                "Image archive config path is invalid")
+        raw = metadata(path, 256 * 1024)
+        config_digest = "sha256:" + hashlib.sha256(raw).hexdigest()
+        path_digest = re.fullmatch(r"(?:blobs/sha256/([0-9a-f]{64})|([0-9a-f]{64})\.json)", path)
+        require(config_digest == "sha256:" + (path_digest.group(1) or path_digest.group(2)),
+                "Image archive config content differs from its addressed digest")
+        expected = manifest.get("imageConfigDigest", manifest["imageId"])
+        require(isinstance(expected, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", expected)
+                and config_digest == expected, "Image archive config digest differs from the verified release")
+        config = json.loads(raw)
+        require(isinstance(config, dict) and config.get("os") == "linux" and config.get("architecture") == "arm64",
+                "Image archive architecture differs from the verified release")
+        require(isinstance(config.get("config"), dict) and config["config"], "Image archive runtime configuration is absent")
+        rootfs = config.get("rootfs", {})
+        layers = rootfs.get("diff_ids")
+        require(rootfs.get("type") == "layers" and isinstance(layers, list) and 0 < len(layers) <= 128
+                and all(isinstance(layer, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", layer) for layer in layers),
+                "Image archive root filesystem identity is invalid")
+        return config_digest, config
+
+
+def verify_loaded_identity(details, archive_config):
+    require(details.get("Os") == archive_config["os"] and details.get("Architecture") == archive_config["architecture"],
+            "Loaded image architecture differs from the verified archive")
+    require(details.get("RootFS", {}).get("Layers") == archive_config["rootfs"]["diff_ids"],
+            "Loaded image root filesystem layers differ from the verified archive")
+    actual = details.get("Config")
+    require(isinstance(actual, dict), "Loaded image runtime configuration is absent")
+    for key, value in archive_config["config"].items():
+        require(key in actual and actual[key] == value,
+                "Loaded image runtime configuration differs from the verified archive: " + key)
 
 
 def environment(image):
@@ -165,6 +226,7 @@ def main():
     archive = (release / manifest["archive"]).resolve(strict=True)
     require(inside(archive, release) and archive.is_file(), "Archive escapes its release directory")
     require(digest(archive) == manifest["archiveSha256"], "Release archive SHA256 mismatch")
+    config_digest, archive_config = archive_identity(archive, manifest, image)
 
     # Everything below is restricted to the local Docker socket and project fourcast.
     lock_descriptor = os.open(project / ".deploy.lock", os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
@@ -181,23 +243,23 @@ def main():
         require(state_path.is_file() and not state_path.is_symlink(),
                 "Existing weather container has no managed rollback record; inspect it manually")
         previous = read_json(state_path)
+        previous_running_id = previous.get("runningImageId", previous.get("imageId"))
         require(previous.get("image") == active["Config"]["Image"]
-                and previous.get("imageId") == active["Image"], "Rollback record differs from the running image")
+                and previous_running_id == active["Image"], "Rollback record differs from the running image")
         require(re.fullmatch(r"fourcast:[0-9a-f]{40}", previous.get("image", "")), "Invalid prior image tag")
         prior_config = Path(previous.get("composeSnapshot", "")).resolve(strict=True)
         require(inside(prior_config, project) and prior_config.is_file(), "Prior Compose snapshot escapes the project")
         require(digest(prior_config) == previous.get("composeSha256"), "Prior Compose snapshot hash mismatch")
-        require(image_details(previous["image"])["Id"] == previous["imageId"], "Prior image is unavailable or changed")
+        require(image_details(previous["image"])["Id"] == previous_running_id, "Prior image is unavailable or changed")
         verify_config(project, prior_config, previous["image"])
         if previous["image"] == image:
-            require(previous["imageId"] == manifest["imageId"],
+            require(previous.get("imageConfigDigest", previous["imageId"]) == config_digest,
                     "A different image already uses this commit tag; preserve the rollback image first")
 
     run(DOCKER + ["load", "--input", str(archive)], image, timeout=180)
     details = image_details(image)
+    verify_loaded_identity(details, archive_config)
     labels = details["Config"].get("Labels") or {}
-    require(details["Id"] == manifest["imageId"] and details["Os"] == "linux"
-            and details["Architecture"] == "arm64", "Loaded image identity or architecture differs")
     require(labels.get("org.opencontainers.image.revision") == commit
             and labels.get("org.opencontainers.image.source") == SOURCE_URL,
             "Loaded image source labels differ from the verified repository")
@@ -221,8 +283,13 @@ def main():
         prior_pointer = None if previous is None else {
             key: previous[key] for key in ("sourceCommit", "image", "imageId", "releaseDirectory", "composeSnapshot", "composeSha256")
         }
+        if prior_pointer is not None:
+            for key in ("runningImageId", "imageConfigDigest"):
+                if key in previous:
+                    prior_pointer[key] = previous[key]
         save_state(state_path, {"schemaVersion": 1, "deployedAt": timestamp,
-            "sourceCommit": commit, "image": image, "imageId": details["Id"],
+            "sourceCommit": commit, "image": image, "imageId": manifest["imageId"],
+            "imageConfigDigest": config_digest, "runningImageId": details["Id"],
             "releaseDirectory": str(release), "archiveSha256": manifest["archiveSha256"],
             "composeSnapshot": str(snapshot), "composeSha256": digest(snapshot), "previous": prior_pointer})
     except Exception as failure:

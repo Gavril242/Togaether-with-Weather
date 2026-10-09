@@ -42,6 +42,13 @@ function weatherBody(now = start) {
 afterEach(() => vi.useRealTimers());
 
 describe("monitor probe classification", () => {
+  it("accepts n8n 2.15 full text responses under data, including the mail acknowledgement", () => {
+    expect(classifyHealth({ statusCode: 200, data: JSON.stringify({ status: "ok", service: "togaether-weather" }) }).ok).toBe(true);
+    expect(classifyWeather({ statusCode: 200, data: JSON.stringify(weatherBody()) }, start)).toEqual(good);
+    const state = openIncident();
+    const accepted = acknowledgeNotification(state, state.incident!.outage!.key, { statusCode: 200, data: JSON.stringify({ id: "fixture-email-id" }) }, start + interval * 2);
+    expect(accepted.incident!.outage!.acceptedAt).toBe(start + interval * 2);
+  });
   it("distinguishes app liveness from HTTP success with wrong content", () => {
     expect(classifyHealth({ statusCode: 200, body: JSON.stringify({ status: "ok", service: "togaether-weather" }) }).ok).toBe(true);
     expect(classifyHealth({ statusCode: 200, body: "<html>sign in</html>" }).ok).toBe(false);

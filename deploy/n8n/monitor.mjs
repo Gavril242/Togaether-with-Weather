@@ -10,9 +10,12 @@ export const MONITOR_POLICY = Object.freeze({
 export function jsonBody(response) {
   if (!response || typeof response !== "object" || response.error) return null;
   try {
-    const body = typeof response.body === "string"
-      ? response.body.length <= 64 * 1024 ? JSON.parse(response.body) : null
-      : response.body;
+    // HTTP Request 4.2 returns text under `data` on n8n 2.15. JSON format
+    // and other supported versions may use `body` instead.
+    const raw = Object.hasOwn(response, "body") ? response.body : response.data;
+    const body = typeof raw === "string"
+      ? raw.length <= 64 * 1024 ? JSON.parse(raw) : null
+      : raw;
     return body && typeof body === "object" && !Array.isArray(body) ? body : null;
   } catch {
     return null;
