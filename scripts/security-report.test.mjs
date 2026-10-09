@@ -51,6 +51,12 @@ test("Trivy rows retain actual installed OS versions and discard descriptions an
   assert.ok(!JSON.stringify(findings).includes("private"));
 });
 
+test("Trivy records outside verified advisory identifiers fail closed", () => {
+  assert.throws(() => trivyFindings({ SchemaVersion: 2, Results: [{ Vulnerabilities: [{
+    VulnerabilityID: "UNKNOWN-2026-1", PkgName: "fixture", InstalledVersion: "1.0.0",
+  }] }] }), /Trivy advisory identifier is unsupported: UNKNOWN-2026-1/);
+});
+
 test("scanner failure keeps coverage incomplete even when the findings list is empty", () => {
   const report = base();
   report.scanners.trivy = { status: "error", error: "Fixture outage" };

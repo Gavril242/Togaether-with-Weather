@@ -127,7 +127,8 @@ export function trivyFindings(result) {
     if (!Array.isArray(target.Vulnerabilities)) continue;
     for (const value of target.Vulnerabilities) {
       const id = value.VulnerabilityID;
-      assert(typeof id === "string" && (CVE.test(id) || GHSA.test(id)), "Trivy advisory identifier is unsupported");
+      assert(typeof id === "string" && (CVE.test(id) || GHSA.test(id)),
+        `Trivy advisory identifier is unsupported: ${typeof id === "string" ? id.slice(0, 80) : typeof id}`);
       assert(typeof value.PkgName === "string" && typeof value.InstalledVersion === "string", "Trivy detected package version is missing");
       const aliases = [...new Set((value.References ?? []).flatMap((reference) => {
         if (typeof reference !== "string") return [];
@@ -222,8 +223,10 @@ export async function collectReport(directory) {
     report.scanners.trivy = { status: "ok", version: TRIVY_VERSION, scope: "containerOperatingSystemAndRuntimeLibraries" };
   } catch (error) {
     const expectedFindingError = error instanceof Error && [
-      "Trivy response is invalid", "Trivy advisory identifier is unsupported", "Trivy detected package version is missing",
-    ].includes(error.message) ? ` ${error.message}` : "";
+      "Trivy response is invalid", "Trivy detected package version is missing",
+    ].includes(error.message) ? ` ${error.message}`
+      : error instanceof Error && /^Trivy advisory identifier is unsupported: [A-Za-z0-9._-]{1,80}$/u.test(error.message)
+        ? ` ${error.message}` : "";
     console.error(`Trivy report verification failed at: ${trivyStep}.${expectedFindingError}`);
     report.scanners.trivy = failure(TRIVY_VERSION, "ARM64 image build or Trivy scan verification failed; coverage is incomplete");
   }
