@@ -13,6 +13,7 @@ export const TRIVY_VERSION = "0.75.0";
 export const TRIVY_IMAGE = "aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa";
 const GHSA = /^GHSA-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}$/;
 const CVE = /^CVE-\d{4}-\d{4,}$/;
+const DEBIAN_TEMP = /^TEMP-\d{7}-[A-F0-9]{6}$/;
 const LEVELS = ["critical", "high", "moderate", "medium", "low", "unknown"];
 const text = (value, maximum = 240) => typeof value === "string"
   ? value.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, maximum) : "";
@@ -127,20 +128,22 @@ export function trivyFindings(result) {
     if (!Array.isArray(target.Vulnerabilities)) continue;
     for (const value of target.Vulnerabilities) {
       const id = value.VulnerabilityID;
-      assert(typeof id === "string" && (CVE.test(id) || GHSA.test(id)),
+      assert(typeof id === "string" && (CVE.test(id) || GHSA.test(id) || DEBIAN_TEMP.test(id)),
         `Trivy advisory identifier is unsupported: ${typeof id === "string" ? id.slice(0, 80) : typeof id}`);
       assert(typeof value.PkgName === "string" && typeof value.InstalledVersion === "string", "Trivy detected package version is missing");
       const aliases = [...new Set((value.References ?? []).flatMap((reference) => {
         if (typeof reference !== "string") return [];
-        const match = reference.match(/(?:advisories\/|vuln\/detail\/)(GHSA-[a-z0-9-]+|CVE-\d{4}-\d{4,})(?:$|[?#])/);
-        return match && match[1] !== id && (CVE.test(match[1]) || GHSA.test(match[1])) ? [match[1]] : [];
+        const match = reference.match(/(?:advisories\/|vuln\/detail\/|tracker\/)(GHSA-[a-z0-9-]+|CVE-\d{4}-\d{4,}|TEMP-\d{7}-[A-F0-9]{6})(?:$|[?#])/);
+        return match && match[1] !== id && (CVE.test(match[1]) || GHSA.test(match[1]) || DEBIAN_TEMP.test(match[1])) ? [match[1]] : [];
       }))];
       rows.push({ id, aliases, title: text(value.Title || id), severity: severity(value.Severity),
         ecosystem: ["node-pkg", "npm"].includes(target.Type) ? "npm"
           : text(target.Type || (target.Class === "os-pkgs" ? "os" : "library"), 80),
         package: text(value.PkgName, 160), installedVersion: text(value.InstalledVersion, 80),
         fixedVersion: text(value.FixedVersion, 160) || null,
-        sourceUrl: GHSA.test(id) ? `https://github.com/advisories/${id}` : `https://nvd.nist.gov/vuln/detail/${id}`,
+        sourceUrl: GHSA.test(id) ? `https://github.com/advisories/${id}`
+          : DEBIAN_TEMP.test(id) ? `https://security-tracker.debian.org/tracker/${id}`
+            : `https://nvd.nist.gov/vuln/detail/${id}`,
         dependencyScope: "container" });
     }
   }
@@ -268,9 +271,11 @@ export function validatePublicReport(report, commit, lockHash) {
   for (const row of report.vulnerabilities) {
     assert(Object.keys(row).every((key) => ["id", "aliases", "title", "severity", "ecosystem", "package",
       "installedVersion", "fixedVersion", "sourceUrl", "dependencyScope"].includes(key)), "Unexpected public finding field");
-    assert((GHSA.test(row.id) || CVE.test(row.id)) && Array.isArray(row.aliases)
-      && row.aliases.length <= 16 && row.aliases.every((id) => GHSA.test(id) || CVE.test(id)), "Invalid public advisory identifier");
-    const expectedUrl = GHSA.test(row.id) ? `https://github.com/advisories/${row.id}` : `https://nvd.nist.gov/vuln/detail/${row.id}`;
+    assert((GHSA.test(row.id) || CVE.test(row.id) || DEBIAN_TEMP.test(row.id)) && Array.isArray(row.aliases)
+      && row.aliases.length <= 16 && row.aliases.every((id) => GHSA.test(id) || CVE.test(id) || DEBIAN_TEMP.test(id)), "Invalid public advisory identifier");
+    const expectedUrl = GHSA.test(row.id) ? `https://github.com/advisories/${row.id}`
+      : DEBIAN_TEMP.test(row.id) ? `https://security-tracker.debian.org/tracker/${row.id}`
+        : `https://nvd.nist.gov/vuln/detail/${row.id}`;
     assert(row.sourceUrl === expectedUrl && LEVELS.includes(row.severity)
       && typeof row.package === "string" && row.package.length > 0 && row.package.length <= 160
       && typeof row.installedVersion === "string" && row.installedVersion.length > 0 && row.installedVersion.length <= 80

@@ -27,14 +27,15 @@ function parsedResponse(response, limit) {
 export function securityAdvisoryId(value) {
   if (typeof value !== "string") return null;
   if (/^CVE-\d{4}-\d{4,12}$/i.test(value)) return value.toUpperCase();
+  if (/^TEMP-\d{7}-[A-F0-9]{6}$/i.test(value)) return value.toUpperCase();
   if (/^GHSA-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}$/i.test(value)) return `GHSA-${value.slice(5).toLowerCase()}`;
   return null;
 }
 function authoritativeUrl(value, ids) {
   // Exact primary-source URL shapes also work in n8n's sandbox without a URL global.
   if (typeof value !== "string") return false;
-  const match = value.match(/^https:\/\/(?:github\.com\/advisories\/(GHSA-[a-z0-9-]+)|nvd\.nist\.gov\/vuln\/detail\/(CVE-\d{4}-\d{4,12}))$/i);
-  return match !== null && ids.includes(securityAdvisoryId(match[1] ?? match[2]));
+  const match = value.match(/^https:\/\/(?:github\.com\/advisories\/(GHSA-[a-z0-9-]+)|nvd\.nist\.gov\/vuln\/detail\/(CVE-\d{4}-\d{4,12})|security-tracker\.debian\.org\/tracker\/(TEMP-\d{7}-[A-F0-9]{6}))$/i);
+  return match !== null && ids.includes(securityAdvisoryId(match[1] ?? match[2] ?? match[3]));
 }
 function normalizedFinding(value) {
   if (!record(value)) return null;
@@ -187,7 +188,7 @@ export function classifySecuritySummary(response, findings) {
         || /[<>`]|https?:\/\/|\b(?:curl|wget|sudo|npm install|pnpm add)\b/i.test(summary.text)) throw new Error("content");
       const finding = summaryFindings(findings).find((candidate) => candidate.id === summary.id);
       const findingIds = new Set([finding.id, ...finding.aliases]);
-      for (const id of summary.text.match(/\b(?:CVE-\d{4}-\d{4,12}|GHSA-[a-z0-9-]+)\b/gi) ?? []) {
+      for (const id of summary.text.match(/\b(?:CVE-\d{4}-\d{4,12}|GHSA-[a-z0-9-]+|TEMP-\d{7}-[A-F0-9]{6})\b/gi) ?? []) {
         if (!findingIds.has(securityAdvisoryId(id))) throw new Error("unknown advisory");
       }
       const versions = new Set([finding.installedVersion, finding.fixedVersion].filter(Boolean));

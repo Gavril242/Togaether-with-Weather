@@ -57,6 +57,17 @@ test("Trivy records outside verified advisory identifiers fail closed", () => {
   }] }] }), /Trivy advisory identifier is unsupported: UNKNOWN-2026-1/);
 });
 
+test("Debian temporary advisories retain exact primary tracker references", () => {
+  const temp = "TEMP-0841856-B18BAF";
+  const findings = trivyFindings({ SchemaVersion: 2, Results: [{ Class: "os-pkgs", Type: "debian", Vulnerabilities: [{
+    VulnerabilityID: temp, PkgName: "libexample", InstalledVersion: "1:2.0-1", Severity: "HIGH",
+    References: [`https://security-tracker.debian.org/tracker/${temp}`],
+  }] }] });
+  assert.equal(findings[0].sourceUrl, `https://security-tracker.debian.org/tracker/${temp}`);
+  const report = finishReport({ ...base(), vulnerabilities: findings });
+  assert.equal(validatePublicReport(report, commit, lockHash), report);
+});
+
 test("scanner failure keeps coverage incomplete even when the findings list is empty", () => {
   const report = base();
   report.scanners.trivy = { status: "error", error: "Fixture outage" };

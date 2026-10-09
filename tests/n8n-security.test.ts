@@ -94,7 +94,15 @@ describe("verified vulnerability report boundary", () => {
     ]) expect(validateSecurityReport(response(feed([changed as SecurityFinding])), lockHash, now, repository).ok).toBe(false);
     expect(securityAdvisoryId("cve-2026-111111")).toBe("CVE-2026-111111");
     expect(securityAdvisoryId("GHSA-2345-6789-CFGH")).toBe("GHSA-2345-6789-cfgh");
+    expect(securityAdvisoryId("temp-0841856-b18baf")).toBe("TEMP-0841856-B18BAF");
     expect(validateSecurityReport(response(feed(Array.from({ length: 401 }, () => finding))), lockHash, now, repository).ok).toBe(false);
+  });
+
+  it("accepts Debian temporary IDs only with their exact tracker record URL", () => {
+    const temporary: SecurityFinding = { ...finding, id: "TEMP-0841856-B18BAF", aliases: [],
+      sourceUrl: "https://security-tracker.debian.org/tracker/TEMP-0841856-B18BAF", dependencyScope: "container" };
+    expect(validation([temporary])).toMatchObject({ ok: true, report: { vulnerabilities: [temporary] } });
+    expect(validation([{ ...temporary, sourceUrl: "https://security-tracker.debian.org/tracker/TEMP-0841856-AAAAAA" }]).ok).toBe(false);
   });
 });
 
