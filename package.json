@@ -1,0 +1,20 @@
+{
+  "name": "togaether-with-weather",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Implementation plan for a four location weather dashboard with AI image generation",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "docs:lint": "node scripts/lint-docs.mjs"
+  },
+  "devDependencies": {
+    "markdownlint": "0.41.1"
+  },
+  "overrides": {
+    "micromark-extension-math": {
+      "katex": "0.18.2"
+    }
+  }
+}
