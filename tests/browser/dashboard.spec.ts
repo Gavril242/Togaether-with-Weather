@@ -219,10 +219,11 @@ test("late search results cannot replace a newer query's matches", async ({ page
   await expect(card(page, "London")).toHaveCount(0);
 });
 
-test("storage write failure keeps selections usable and explains the reload limitation", async ({ page }) => {
+test("blocked cookies and storage keep selections usable and explain the reload limitation", async ({ page }) => {
   await mockDashboardApi(page);
   await page.addInitScript(() => {
     Storage.prototype.setItem = () => { throw new DOMException("Test storage denied", "QuotaExceededError"); };
+    Object.defineProperty(document, "cookie", { configurable: true, get: () => "", set: () => {} });
   });
   await page.goto("/");
   await choosePlace(page, "London", /United Kingdom/);

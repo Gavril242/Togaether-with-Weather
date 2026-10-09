@@ -35,3 +35,9 @@ Verification: code lint, strict types, production build, and all 28 existing bro
 ## Further implementation record format
 
 For each completed phase, add the tools used, the bounded task handed to them, the code changed after human or agent review, the suggestions rejected and why, and the validation actually performed. Record uncertainty rather than claiming that generated code is correct because a tool produced it.
+
+## Cookie and operations increment, 10 October 2026
+
+The owner authorized the separate Pi origin, provided a Cloudflare tunnel token, and requested cookie preferences and n8n email alerts using the store's mail configuration. Codex delegated cookie storage, container packaging, and incident monitoring separately. Remote access used the existing SSH key; read only inventory confirmed Debian 13 ARM64, available capacity, and a free origin port.
+
+Review kept weather values out of cookies, added canonical lookup restoration, and fixed late restoration responses and a stale cookie overriding newer localStorage when cookie writes fail. Thirty five new unit cases and 44 desktop/mobile browser flows passed locally. The Docker build uses an allowlist so environment files and local credentials cannot enter its context. A dedicated connector uses systemd credentials instead of replacing existing tunnel services or placing a token in command arguments. The connector reported four healthy edge connections. Container promotion and n8n execution evidence are recorded separately when observed.

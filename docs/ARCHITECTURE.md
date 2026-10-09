@@ -1,6 +1,6 @@
 # Architecture
 
-Status: foundation and weather implemented, 9 October 2026. The dashboard, location and weather routes, atmospheric background, deterministic image prompt builder, and server only Gemini adapter exist. Image admission, durable jobs, database, media, containers, and deployment remain proposed. No production readiness or hardware performance is claimed.
+Status: weather, cookie preferences, and container packaging implemented, 10 October 2026. The dashboard, location and weather routes, atmospheric background, deterministic image prompt builder, and server only Gemini adapter exist. The owner authorized a separate Pi origin and supplied a tunnel token. The dedicated connector is online; promotion and monitoring evidence are tracked in [operations](OPERATIONS.md). Image admission, durable jobs, database, and media remain proposed. No hardware performance benchmark is claimed.
 
 Current runtime requires Node.js 24 and npm only. Weather runs without an environment file. The Gemini adapter is not connected to a browser generation route; adding a key does not enable generation. One authorized live image probe returned HTTP 429 for image quota.
 

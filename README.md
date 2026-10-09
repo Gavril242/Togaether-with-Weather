@@ -13,7 +13,7 @@ npm ci
 npm run dev -- --port 3100
 ```
 
-Open <http://127.0.0.1:3100>. No key, environment file, account, or database is required for weather. Choose a specific search match, add four places, and reload to restore them. Remove a place to replace it. Each card can retry independently.
+Open <http://127.0.0.1:3100>. No key, environment file, account, or database is required for weather. Choose a specific search match, add four places, and reload to restore them. A small preference cookie remembers their IDs for a year, with localStorage migration and fallback. Weather refreshes on reload. Remove a place to replace it. Each card can retry independently.
 
 For a production build, stop the development server and run:
 
@@ -34,7 +34,7 @@ The Three.js background follows the focused place's local time and conditions. C
 
 Image generation is disabled in this release. The adapter and prompt builder have fixture tests; browser integration, durable jobs, storage, ownership, and spending controls remain to be shipped. Adding an image key does not enable the button. One authorized Gemini image request returned HTTP 429 because the supplied project has no usable image quota. No image was generated.
 
-With one more day, finish durable generation and immutable prompt/media storage, then verify one live image after image quota is available. Containers, public abuse controls, backup recovery, and deployment remain separate gates. No Raspberry Pi services or tunnels have been changed.
+With one more day, finish durable generation and immutable prompt/media storage, then verify one live image after image quota is available. The ARM64 container workflow and isolated Pi connector are implemented. Origin promotion, hostname verification, and mail monitoring are recorded in [operations](docs/OPERATIONS.md); they do not enable paid generation. External monitoring and backup recovery for future image data remain open.
 
 ## Checks and AI use
 

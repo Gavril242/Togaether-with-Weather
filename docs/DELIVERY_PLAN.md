@@ -65,7 +65,7 @@ Each phase has its own commits and a reviewable result. Application CI begins wi
 | 6. Usability and performance | Responsive visual polish, React transitions, reduced motion, accessibility review, accurate metadata, measured performance | Keyboard and mobile flows pass; performance reports are retained; no fabricated Lighthouse or deployment claims | `codex/experience` |
 | 7. Pi deployment and handover | Isolated Compose project, supplied tunnel route, health checks, backup and restore, rollback, monitoring, optional n8n integration | Only after deployment stage authorization: local and public probes pass, restore and rollback are exercised, other projects remain unaffected | `codex/pi-release` |
 
-The current increment ships the weather foundation and part of the experience phase, plus the image provider boundary. Phases 1 through 3 must satisfy all gates to deliver the complete assignment locally. Phase 4 is required before anonymous public paid generation. Phase 5 prepares deployable artifacts. Phase 7 remains deferred until the owner provides the tunnel details.
+The current increment ships the weather foundation, cookie preferences, part of the experience phase, and the image provider boundary. Phases 1 through 3 must satisfy all gates to deliver the complete assignment locally. Phase 4 is required before anonymous public paid generation. On 10 October the owner supplied a tunnel token and authorized a weather only Pi deployment. Phase 5 now builds verified ARM64 image archives with manifests rather than publishing to GHCR; this avoids introducing registry credentials on the shared host. The phase 7 connector is online; origin and monitoring evidence belongs in [operations](OPERATIONS.md).
 
 ## Phase detail
 

@@ -4,6 +4,7 @@ import { localDateAt, type WeatherResponse } from "../../src/domain/weather";
 
 export const CLOCK_TIME = "2026-10-09T17:05:00.000Z";
 export const STORAGE_KEY = "fourcast.locations.v1";
+export const COOKIE_NAME = "fourcast_places_v1";
 
 export const places: Record<string, Location> = {
   springfieldIllinois: { id: 4250542, name: "Springfield", latitude: 39.80172, longitude: -89.64371, timezone: "America/Chicago", country: "United States", countryCode: "US", admin1: "Illinois" },
@@ -46,6 +47,9 @@ export async function mockDashboardApi(page: Page) {
   const failingSearches = new Set<string>();
   const requestedWeather: number[] = [];
   const extraPlaces: Location[] = [];
+  const failingRestorations = new Set<number>();
+  const requestedRestorations: number[][] = [];
+  let restorationDelay: { started: () => void; wait: Promise<void>; complete: () => void } | null = null;
   const searchDelays = new Map<string, { started: () => void; wait: Promise<void>; complete: () => void }>();
   const allPlaces = () => [...Object.values(places), ...extraPlaces];
   function delaySearch(query: string) {
@@ -58,7 +62,30 @@ export async function mockDashboardApi(page: Page) {
     searchDelays.set(query.toLowerCase(), { started: markStarted, wait, complete });
     return { started, release, completed };
   }
+  function delayRestore() {
+    let markStarted!: () => void;
+    let release!: () => void;
+    let complete!: () => void;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const wait = new Promise<void>((resolve) => { release = resolve; });
+    const completed = new Promise<void>((resolve) => { complete = resolve; });
+    restorationDelay = { started: markStarted, wait, complete };
+    return { started, release, completed };
+  }
   await page.clock.setFixedTime(new Date(CLOCK_TIME));
+  await page.route("**/api/locations/restore?**", async (route) => {
+    const ids = (new URL(route.request().url()).searchParams.get("ids") ?? "").split(",").map(Number);
+    requestedRestorations.push(ids);
+    const delay = restorationDelay;
+    if (delay) { delay.started(); await delay.wait; }
+    try {
+      const locations = ids.flatMap((id) => {
+        const place = allPlaces().find((item) => item.id === id);
+        return place && !failingRestorations.has(id) ? [place] : [];
+      });
+      await route.fulfill({ json: { locations, unavailableIds: ids.filter((id) => !locations.some((place) => place.id === id)) } });
+    } finally { delay?.complete(); }
+  });
   await page.route("**/api/locations?**", async (route) => {
     const query = new URL(route.request().url()).searchParams.get("q")?.trim().toLowerCase() ?? "";
     const delay = searchDelays.get(query);
@@ -88,11 +115,21 @@ export async function mockDashboardApi(page: Page) {
     }
     await route.fulfill({ json: weatherFor(place) });
   });
-  return { failingWeather, failingSearches, requestedWeather, delaySearch, extraPlaces };
+  return { failingWeather, failingSearches, requestedWeather, delaySearch, extraPlaces, failingRestorations, requestedRestorations, delayRestore };
 }
 
 export async function seedPlaces(page: Page, locations: Location[]) {
   await page.addInitScript(({ key, value }) => {
     window.localStorage.setItem(key, value);
   }, { key: STORAGE_KEY, value: JSON.stringify({ version: 1, locations }) });
+}
+
+export async function seedCookie(page: Page, ids: number[] | string) {
+  await page.context().addCookies([{
+    name: COOKIE_NAME,
+    value: typeof ids === "string" ? ids : ["1", ...ids].join("."),
+    url: "http://127.0.0.1",
+    sameSite: "Lax",
+    expires: Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60,
+  }]);
 }
