@@ -42,6 +42,7 @@ export default function Atmosphere({ condition = "clear", timezone = "UTC", inte
     let generation = 0;
     let intersecting = true;
     let lastQuality = "";
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
 
     const updateClock = () => {
       const light = daylightAt(new Date(), current.current.timezone);
@@ -95,15 +96,24 @@ export default function Atmosphere({ condition = "clear", timezone = "UTC", inte
         if (!disposed && generation === request) stopScene();
       }
     };
-    const resize = () => { void configure(); };
+    const resize = () => {
+      // Keep the existing WebGL context while the browser is being resized.
+      // The canvas scales with CSS; resize its drawing buffer once the gesture settles.
+      if (resizeTimer !== undefined) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        resizeTimer = undefined;
+        scene.current?.resize();
+      }, 140);
+    };
+    const reconfigure = () => { void configure(); };
     const observer = typeof IntersectionObserver === "undefined" ? null : new IntersectionObserver(([entry]) => {
       intersecting = entry.isIntersecting;
       setVisible();
     });
     observer?.observe(element);
-    motion.addEventListener("change", resize);
-    pointer.addEventListener("change", resize);
-    device.connection?.addEventListener("change", resize);
+    motion.addEventListener("change", reconfigure);
+    pointer.addEventListener("change", reconfigure);
+    device.connection?.addEventListener("change", reconfigure);
     window.addEventListener("resize", resize, { passive: true });
     document.addEventListener("visibilitychange", setVisible);
     // Static mode still changes with local time, without an animation loop.
@@ -114,10 +124,11 @@ export default function Atmosphere({ condition = "clear", timezone = "UTC", inte
     return () => {
       disposed = true;
       generation += 1;
+      if (resizeTimer !== undefined) clearTimeout(resizeTimer);
       observer?.disconnect();
-      motion.removeEventListener("change", resize);
-      pointer.removeEventListener("change", resize);
-      device.connection?.removeEventListener("change", resize);
+      motion.removeEventListener("change", reconfigure);
+      pointer.removeEventListener("change", reconfigure);
+      device.connection?.removeEventListener("change", reconfigure);
       window.removeEventListener("resize", resize);
       document.removeEventListener("visibilitychange", setVisible);
       window.clearInterval(clock);

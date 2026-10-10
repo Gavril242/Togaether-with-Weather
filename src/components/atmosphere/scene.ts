@@ -68,6 +68,7 @@ export function createAtmosphereScene(
   let compiled = false;
   let frameId = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let resizeTimer: ReturnType<typeof setTimeout> | undefined;
   let lastFrame = 0;
   let totalSpacing = 0;
   let samples = 0;
@@ -83,12 +84,24 @@ export function createAtmosphereScene(
     timer = undefined;
   };
 
-  const resize = () => {
+  const applyResize = () => {
     if (disposed || contextLost) return;
     const size = drawingSize(window.innerWidth, window.innerHeight, window.devicePixelRatio, quality);
-    renderer.setPixelRatio(size.pixelRatio);
+    // drawingSize already applies a bounded scale. A second device pixel ratio
+    // multiplication needlessly grows the buffer and can exhaust mobile GPUs.
     renderer.setSize(size.width, size.height, false);
     uniforms.uAspect.value = window.innerWidth / Math.max(1, window.innerHeight);
+    if (compiled && quality !== "static") {
+      try { renderer.render(scene, camera); } catch { fail(); }
+    }
+  };
+
+  const resize = () => {
+    if (resizeTimer !== undefined) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      resizeTimer = undefined;
+      applyResize();
+    }, 140);
   };
 
   const clock = () => {
@@ -154,7 +167,7 @@ export function createAtmosphereScene(
           cancel();
           return;
         }
-        resize();
+        applyResize();
       }
     }
     schedule();
@@ -200,14 +213,14 @@ export function createAtmosphereScene(
     if (disposed) return;
     contextLost = false;
     // Three reconstructs its context internally; original geometry and uniforms remain reusable.
-    resize();
+    applyResize();
     if (quality !== "static") reportMode(quality);
     setActive(active);
   };
   canvas.addEventListener("webglcontextlost", onContextLost);
   canvas.addEventListener("webglcontextrestored", onContextRestored);
   renderer.debug.onShaderError = fail;
-  resize();
+  applyResize();
   void renderer.compileAsync(scene, camera).then(() => {
     if (disposed || quality === "static") return;
     compiled = true;
@@ -223,6 +236,7 @@ export function createAtmosphereScene(
       if (disposed) return;
       disposed = true;
       cancel();
+      if (resizeTimer !== undefined) clearTimeout(resizeTimer);
       canvas.removeEventListener("webglcontextlost", onContextLost);
       canvas.removeEventListener("webglcontextrestored", onContextRestored);
       scene.remove(plane);
