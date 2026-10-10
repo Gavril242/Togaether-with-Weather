@@ -34,7 +34,7 @@ Public weather and saved place routes use bounded in-process token buckets: 30 r
 
 `TRUST_CLOUDFLARE_PROXY=true` is set only by the isolated loopback Compose origin. It accepts a valid `CF-Connecting-IP` from the connector. Do not expose that origin on a LAN interface while trusting caller supplied proxy headers. Local development leaves the setting false. These controls are single process limits, reset on restart, and do not guarantee an upstream daily allowance. Review Open Meteo's public use terms and observe traffic before expanding use.
 
-Paid image generation remains disabled. An image key or tunnel does not bypass the unfinished ownership, durable jobs, and spending controls.
+Image generation is disabled unless `IMAGE_GENERATION_ENABLED=true` and a Gemini image key are present. When explicitly enabled, the server fetches all four weather snapshots, builds the prompt, and sends one bounded request. The image returns in the response and is not persisted. A single process allows one generation at a time, ten attempts in 24 hours, and one attempt per visitor every ten minutes; these limits reset on restart and are not shared between instances. Do not enable image generation on a public deployment until durable jobs, shared spending limits, and an image retention policy are in place. Gemini image models are not available on the free API tier.
 
 ## Monitoring
 
