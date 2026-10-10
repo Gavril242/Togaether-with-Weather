@@ -63,7 +63,7 @@ jobs:
       - name: Install locked dependencies and browser
         run: |
           npm ci --no-fund
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium webkit
       - name: Verify production dashboard with fixtures
         run: npm run test:browser
       - name: Keep failure diagnostics

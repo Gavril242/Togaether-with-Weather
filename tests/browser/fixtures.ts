@@ -14,6 +14,7 @@ export const places: Record<string, Location> = {
   tokyo: { id: 1850147, name: "Tokyo", latitude: 35.6895, longitude: 139.69171, timezone: "Asia/Tokyo", country: "Japan", countryCode: "JP", admin1: "Tokyo" },
   reykjavik: { id: 3413829, name: "Reykjavik", latitude: 64.13548, longitude: -21.89541, timezone: "Atlantic/Reykjavik", country: "Iceland", countryCode: "IS", admin1: "Capital Region" },
   capeTown: { id: 3369157, name: "Cape Town", latitude: -33.92584, longitude: 18.42322, timezone: "Africa/Johannesburg", country: "South Africa", countryCode: "ZA", admin1: "Western Cape" },
+  timisoara: { id: 665087, name: "Timișoara", latitude: 45.7489, longitude: 21.2087, timezone: "Europe/Bucharest", country: "Romania", countryCode: "RO", admin1: "Timiș" },
 };
 
 const temperatures: Record<number, number> = {
@@ -100,7 +101,8 @@ export async function mockDashboardApi(page: Page, options: { consent?: "allow" 
         await route.fulfill({ status: 504, json: { error: { code: "UPSTREAM_TIMEOUT", message: "Place search took too long to respond. Please try again.", retryable: true } } });
         return;
       }
-      const locations = allPlaces().filter((place) => place.name.toLowerCase().startsWith(query));
+    const fold = (value: string) => value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase();
+    const locations = allPlaces().filter((place) => fold(place.name).startsWith(fold(query)));
       await route.fulfill({ json: { locations } });
     } finally {
       delay?.complete();

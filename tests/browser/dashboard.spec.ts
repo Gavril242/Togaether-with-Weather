@@ -38,8 +38,32 @@ test("chooses an unambiguous Springfield and displays API units", async ({ page 
   await expect(page.getByText("1 of 4 places", { exact: true })).toBeVisible();
 });
 
+test("iPhone sized touch search selects Timișoara when typed without diacritics @webkit", async ({ page }, testInfo) => {
+  test.skip(!["mobile", "mobile-webkit"].includes(testInfo.project.name), "Exercises the iPhone touch viewport");
+  await mockDashboardApi(page);
+  await page.goto("/");
+  await search(page).tap();
+  await search(page).pressSequentially("Timisoara");
+  await expect(search(page)).toHaveValue("Timisoara");
+  const option = page.getByRole("option").filter({ hasText: /Romania/ });
+  await expect(option).toHaveCount(1);
+  await option.tap();
+  await expect(card(page, "Timișoara")).toContainText("Romania");
+  await expect(page.getByText("1 of 4 places", { exact: true })).toBeVisible();
+});
+
 test("keeps four selected places across reload and allows removal and replacement", async ({ page }, testInfo) => {
   await mockDashboardApi(page);
+  let imageRequests = 0;
+  await page.route("**/api/image", async route => {
+    imageRequests++;
+    if (imageRequests === 1) return route.fulfill({ status: 429, json: { error: {
+      code: "QUOTA_EXCEEDED", message: "Image generation has reached the Gemini project's quota.", retryable: false,
+    } } });
+    const locationIds = (route.request().postDataJSON() as { locationIds: number[] }).locationIds;
+    return route.fulfill({ json: { image: { data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jFtoAAAAASUVORK5CYII=", mimeType: "image/png", width: 1, height: 1, model: "fixture-image" },
+      prompt: { version: "weather-panels-v1", text: "Four places, their observed weather, four panels.", locationIds, observedAt: Array(4).fill("2026-10-09T17:00:00Z") } } });
+  });
   await page.goto("/");
   await choosePlace(page, "Springfield", /Massachusetts/);
   await choosePlace(page, "London", /United Kingdom/);
@@ -47,7 +71,7 @@ test("keeps four selected places across reload and allows removal and replacemen
   await choosePlace(page, "Reykjavik", /Iceland/);
   await expect(page.getByText("4 of 4 places", { exact: true })).toBeVisible();
   await expect(search(page)).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Generate weather image", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Generate weather image", exact: true })).toBeEnabled();
   await page.reload();
   for (const name of ["Springfield", "London", "Tokyo", "Reykjavik"]) {
     await expect(card(page, name)).toBeVisible();
@@ -61,9 +85,14 @@ test("keeps four selected places across reload and allows removal and replacemen
     caption.style.cssText = "position:relative;z-index:99999;margin:8px;padding:8px 12px;border-radius:6px;background:#10221f;color:white;font:12px sans-serif;text-align:center;";
     document.body.appendChild(caption);
   });
-  const viewport = testInfo.project.name === "mobile" ? "mobile" : "desktop";
+  const viewport = testInfo.project.name.startsWith("mobile") ? "mobile" : "desktop";
   await page.screenshot({ path: `.local/previews/fixture-dashboard-${viewport}.png`, fullPage: true });
   await page.locator("[data-fixture-preview]").evaluate((element) => element.remove());
+  await page.getByRole("button", { name: "Generate weather image", exact: true }).click();
+  await expect(page.locator(".studio-status")).toContainText("Gemini project's quota");
+  await page.getByRole("button", { name: "Generate weather image", exact: true }).click();
+  await expect(page.getByAltText("AI-generated four-panel interpretation of the weather in your selected places")).toBeVisible();
+  await expect(page.locator(".image-prompt pre")).toContainText("four panels");
   await page.getByRole("button", { name: "Remove London", exact: true }).click();
   await expect(card(page, "London")).toHaveCount(0);
   await expect(search(page)).toBeEnabled();

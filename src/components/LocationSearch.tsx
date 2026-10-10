@@ -14,8 +14,18 @@ export function LocationSearch({ full, inputRef }: { full: boolean; inputRef?: R
   const [active, setActive] = useState(-1);
   const [open, setOpen] = useState(false);
   const localInput = useRef<HTMLInputElement>(null);
+  const searchArea = useRef<HTMLDivElement>(null);
   const input = inputRef ?? localInput;
   const id = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const closeFromOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !searchArea.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeFromOutside);
+    return () => document.removeEventListener("pointerdown", closeFromOutside);
+  }, [open]);
 
   useEffect(() => {
     if (query.trim().length < 2) return;
@@ -47,7 +57,11 @@ export function LocationSearch({ full, inputRef }: { full: boolean; inputRef?: R
     change(""); setOpen(false); input.current?.focus();
   }
 
-  return <div className="search-area" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
+  return <div className="search-area" ref={searchArea} onBlur={event => {
+    // iOS WebKit can report null relatedTarget for a tap on a non-focusable option.
+    // Outside pointer events close the list; keeping it open here lets the click select.
+    if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+  }}>
     <label htmlFor={`${id}-input`} className="eyebrow">Find your next place</label>
     <div className="search-field">
       <Search size={19} aria-hidden="true" />
@@ -61,7 +75,7 @@ export function LocationSearch({ full, inputRef }: { full: boolean; inputRef?: R
     </div>
     {open && query.trim().length >= 2 && <div className="search-results">
       <ul id={`${id}-results`} role="listbox" aria-label="Matching places">
-        {results.map((place, index) => <li key={place.id} id={`${id}-option-${index}`} role="option" aria-selected={index === active} onPointerDown={event => event.preventDefault()} onClick={() => select(place)}>
+        {results.map((place, index) => <li key={place.id} id={`${id}-option-${index}`} role="option" aria-selected={index === active} onClick={() => select(place)}>
           <MapPin size={17} aria-hidden="true" /><span><strong>{place.name}</strong><small>{locationLabel(place)}</small></span><ArrowUpRight size={17} aria-hidden="true" />
         </li>)}
       </ul>
