@@ -38,6 +38,38 @@ test("chooses an unambiguous Springfield and displays API units", async ({ page 
   await expect(page.getByText("1 of 4 places", { exact: true })).toBeVisible();
 });
 
+test("reveals richer forecast details with hover and a tappable pin control", async ({ page }, testInfo) => {
+  await mockDashboardApi(page);
+  await seedPlaces(page, [places.london]);
+  await page.goto("/");
+  const london = card(page, "London");
+  const panel = london.getByRole("region", { name: "Additional weather details for London" });
+  if (testInfo.project.name.startsWith("mobile")) {
+    await london.getByRole("button", { name: "More conditions" }).tap();
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText("Humidity");
+    await expect(london.getByRole("button", { name: "More conditions" })).toHaveAttribute("aria-expanded", "true");
+    await panel.getByRole("button", { name: "Close weather details for London" }).tap();
+    await expect(panel).toBeHidden();
+  } else {
+    await london.hover();
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText("Feels like");
+    await expect(panel).toContainText("Humidity");
+    await expect(panel).toContainText("1008 hPa");
+    await expect(panel).toContainText("Sunrise");
+    await page.locator(".hero").hover();
+    await expect(panel).toBeHidden();
+    await london.getByRole("button", { name: "More conditions" }).click();
+    await expect(london.getByRole("button", { name: "More conditions" })).toHaveAttribute("aria-expanded", "true");
+    await page.locator(".hero").hover();
+    await expect(panel).toBeVisible();
+    await panel.getByRole("button", { name: "Close weather details for London" }).click();
+    await expect(panel).toBeHidden();
+  }
+  await expect(london.getByRole("heading", { name: "London" })).toBeFocused();
+});
+
 test("iPhone sized touch search selects Timișoara when typed without diacritics @webkit", async ({ page }, testInfo) => {
   test.skip(!["mobile", "mobile-webkit"].includes(testInfo.project.name), "Exercises the iPhone touch viewport");
   await mockDashboardApi(page);
@@ -62,7 +94,7 @@ test("keeps four selected places across reload and allows removal and replacemen
     } } });
     const locationIds = (route.request().postDataJSON() as { locationIds: number[] }).locationIds;
     return route.fulfill({ json: { image: { data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jFtoAAAAASUVORK5CYII=", mimeType: "image/png", width: 1, height: 1, model: "fixture-image" },
-      prompt: { version: "weather-panels-v1", text: "Four places, their observed weather, four panels.", locationIds, observedAt: Array(4).fill("2026-10-09T17:00:00Z") } } });
+      prompt: { version: "weather-panels-v2", text: "Four places, their observed weather, four panels.", locationIds, observedAt: Array(4).fill("2026-10-09T17:00:00Z") } } });
   });
   await page.goto("/");
   await choosePlace(page, "Springfield", /Massachusetts/);

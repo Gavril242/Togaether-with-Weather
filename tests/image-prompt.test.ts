@@ -20,9 +20,21 @@ function snapshot(id: number, overrides: Partial<WeatherSnapshot> = {}): Weather
     fetchedAt: "2026-10-09T18:02:00.000Z",
     localDate: "2026-10-09",
     temperatureC: 13.2,
+    feelsLikeC: 12.5,
+    humidityPercent: 72,
+    precipitationMm: 0.4,
+    cloudCoverPercent: 85,
+    pressureHpa: 1008.2,
     highC: 19.1,
     lowC: 7.6,
+    precipitationProbabilityPercent: 65,
+    precipitationTodayMm: 3.2,
+    uvIndexMax: 5.3,
+    sunrise: "2026-10-09T06:00:00.000Z",
+    sunset: "2026-10-09T18:00:00.000Z",
     windKmh: 11.4,
+    windDirectionDegrees: 225,
+    windGustKmh: 20,
     weatherCode: 61,
     condition: "Slight rain",
     category: "rain",
@@ -40,7 +52,7 @@ describe("weather image prompt", () => {
     snapshots[1] = snapshot(2, { timezone: "America/New_York", temperatureC: 22.6, condition: "Clear sky", isDay: true });
     const result = buildWeatherImagePrompt(snapshots);
     expect(result).toEqual(buildWeatherImagePrompt(snapshots));
-    expect(result.version).toBe("weather-panels-v1");
+    expect(result.version).toBe("weather-panels-v2");
     expect(result.locationIds).toEqual([1, 2, 3, 4]);
     const records = JSON.parse(result.text.slice(result.text.indexOf("[\n"))) as Array<{
       panel: string;
@@ -51,6 +63,7 @@ describe("weather image prompt", () => {
     expect(records[0]?.observedLocalTime).toContain("21:00");
     expect(records[1]?.observedLocalTime).toContain("14:00");
     expect(records[1]?.weather).toMatchObject({ temperatureC: 22.6, daylight: true, windKmh: 11.4 });
+    expect(records[0]?.weather).toMatchObject({ humidityPercent: 72, cloudCoverPercent: 85, windGustKmh: 20 });
     expect(result.text).toContain("not a documentary photograph or forecast");
   });
 

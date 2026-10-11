@@ -3,11 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ImageProviderError, type WeatherImagePrompt } from "../src/domain/image";
 import { decodeProviderImage, MAX_IMAGE_BYTES } from "../src/server/images/image-bytes";
 import { DEFAULT_GEMINI_IMAGE_MODEL, GeminiImageProvider } from "../src/server/images/gemini";
+import { ComfyUiImageProvider } from "../src/server/images/comfyui";
 
 const key = "fixture-server-key";
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==";
 const prompt: WeatherImagePrompt = {
-  version: "weather-panels-v1",
+  version: "weather-panels-v2",
   text: "A fixture weather illustration",
   locationIds: [1, 2, 3, 4],
   observedAt: Array.from({ length: 4 }, () => "2026-10-09T12:00:00.000Z"),
@@ -178,5 +179,44 @@ describe("provider image bounds", () => {
     const large = Buffer.from(png, "base64");
     large.writeUInt32BE(100_000, 16);
     expect(() => decodeProviderImage(large.toString("base64"), "image/png")).toThrow(ImageProviderError);
+  });
+});
+
+describe("local ComfyUI image provider", () => {
+  it("queues one bounded local SDXL Turbo workflow and validates the returned PNG", async () => {
+    const id = "12345678-1234-4abc-8def-1234567890ab";
+    const transport = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ prompt_id: id }))
+      .mockResolvedValueOnce(Response.json({
+        [id]: {
+          status: { status_str: "success" },
+          outputs: { "7": { images: [{ filename: "fourcast-weather_00001_.png", subfolder: "", type: "output" }] } },
+        },
+      }))
+      .mockResolvedValueOnce(new Response(Buffer.from(png, "base64"), { headers: { "Content-Type": "image/png" } }));
+    const provider = new ComfyUiImageProvider({}, { fetch: transport, seed: () => 1234, pollIntervalMs: 10 });
+    const generated = await provider.generate(prompt);
+    expect(generated).toMatchObject({ model: "sd_xl_turbo_1.0_fp16.safetensors", mimeType: "image/png", width: 1, height: 1 });
+    expect(transport).toHaveBeenCalledTimes(3);
+    const [url, init] = transport.mock.calls[0]!;
+    expect(String(url)).toBe("http://127.0.0.1:8188/prompt");
+    expect(init?.redirect).toBe("error");
+    const submitted = JSON.parse(init?.body as string) as { prompt: Record<string, { inputs: Record<string, unknown> }> };
+    expect(submitted.prompt["4"]?.inputs).toMatchObject({ width: 768, height: 512, batch_size: 1 });
+    expect(submitted.prompt["5"]?.inputs).toMatchObject({ seed: 1234, steps: 4, cfg: 0 });
+    expect(submitted.prompt["1"]?.inputs).toEqual({ ckpt_name: "sd_xl_turbo_1.0_fp16.safetensors" });
+    expect(String(transport.mock.calls[2]![0])).toBe("http://127.0.0.1:8188/view?filename=fourcast-weather_00001_.png&subfolder=&type=output");
+  });
+
+  it("refuses non-loopback servers, URL credentials, unsafe output paths, and duplicate resubmission", async () => {
+    for (const baseUrl of ["https://127.0.0.1:8188", "http://192.168.1.144:8188", "http://user:pass@127.0.0.1:8188", "http://127.0.0.1:8188/admin"]) {
+      expect(() => new ComfyUiImageProvider({ baseUrl })).toThrowError(expect.objectContaining({ code: "invalid_configuration" }));
+    }
+    const transport = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ prompt_id: "12345678-1234-4abc-8def-1234567890ab" })).mockResolvedValueOnce(Response.json({
+      "12345678-1234-4abc-8def-1234567890ab": { status: { status_str: "success" }, outputs: { "7": { images: [{ filename: "../../secret.png", subfolder: "", type: "output" }] } } },
+    }));
+    const provider = new ComfyUiImageProvider({}, { fetch: transport, pollIntervalMs: 10 });
+    await expect(provider.generate(prompt)).rejects.toMatchObject({ code: "invalid_response" });
+    expect(transport).toHaveBeenCalledTimes(2);
   });
 });

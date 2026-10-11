@@ -4,6 +4,7 @@ import { ImageProviderError, type GeneratedImage, type ImageProvider } from "../
 import type { WeatherSnapshot } from "../../domain/weather";
 import { getWeather } from "../weather/service";
 import { GeminiImageProvider } from "./gemini";
+import { ComfyUiImageProvider } from "./comfyui";
 import { buildWeatherImagePrompt } from "./prompt";
 
 export interface WeatherImageResult {
@@ -20,7 +21,7 @@ export function createWeatherImageService(options: {
   return {
     async generate(ids: unknown, signal?: AbortSignal): Promise<WeatherImageResult> {
       if (options.enabled !== true) {
-        throw new ImageProviderError("missing_configuration", "Image generation is turned off. Set IMAGE_GENERATION_ENABLED=true and add a server Gemini image key to enable it.", "not_submitted");
+        throw new ImageProviderError("missing_configuration", "Image generation is turned off. Set IMAGE_GENERATION_ENABLED=true in the server environment to enable it.", "not_submitted");
       }
       if (!Array.isArray(ids) || ids.length !== 4 || ids.some((id) => !locationIdSchema.safeParse(id).success)
         || new Set(ids).size !== 4) {
@@ -29,8 +30,17 @@ export function createWeatherImageService(options: {
       const weather = options.weather ?? getWeather;
       const snapshots = await Promise.all((ids as number[]).map(async (id) => (await weather(id)).weather));
       const prompt = buildWeatherImagePrompt(snapshots);
+      const providerName = process.env.IMAGE_PROVIDER ?? "gemini";
+      if (providerName !== "gemini" && providerName !== "comfyui") {
+        throw new ImageProviderError("invalid_configuration", "IMAGE_PROVIDER must be gemini or comfyui.", "not_submitted");
+      }
+      if (providerName === "comfyui" && process.env.NODE_ENV === "production") {
+        throw new ImageProviderError("invalid_configuration", "The ComfyUI provider is available only for local development. Configure the hosted image provider for production.", "not_submitted");
+      }
       const key = options.apiKey ?? process.env.GEMINI_API_KEY;
-      const provider = options.provider ?? new GeminiImageProvider({ apiKey: key, model: process.env.GEMINI_IMAGE_MODEL });
+      const provider = options.provider ?? (providerName === "comfyui"
+        ? new ComfyUiImageProvider({ baseUrl: process.env.COMFYUI_API_URL, checkpoint: process.env.COMFYUI_CHECKPOINT })
+        : new GeminiImageProvider({ apiKey: key, model: process.env.GEMINI_IMAGE_MODEL }));
       const image = await provider.generate(prompt, signal);
       return {
         image: { data: Buffer.from(image.bytes).toString("base64"), mimeType: image.mimeType,

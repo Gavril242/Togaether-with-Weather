@@ -30,8 +30,15 @@ export async function POST(request: Request): Promise<Response> {
     if (!Array.isArray(locationIds) || locationIds.length !== 4
       || locationIds.some((id) => !locationIdSchema.safeParse(id).success)
       || new Set(locationIds).size !== 4) throw invalidInput("Choose four different places before creating an image.");
-    if (process.env.IMAGE_GENERATION_ENABLED !== "true" || !process.env.GEMINI_API_KEY?.trim()) {
-      throw new ImageProviderError("missing_configuration", "Image generation is turned off. Add a Gemini image key and set IMAGE_GENERATION_ENABLED=true in the server environment.", "not_submitted");
+    const provider = process.env.IMAGE_PROVIDER ?? "gemini";
+    if (process.env.IMAGE_GENERATION_ENABLED !== "true") {
+      throw new ImageProviderError("missing_configuration", "Image generation is turned off. Set IMAGE_GENERATION_ENABLED=true in the server environment.", "not_submitted");
+    }
+    if (provider === "comfyui" && process.env.NODE_ENV === "production") {
+      throw new ImageProviderError("invalid_configuration", "The ComfyUI provider is available only for local development. Configure the hosted image provider for production.", "not_submitted");
+    }
+    if ((provider === "gemini" && !process.env.GEMINI_API_KEY?.trim()) || (provider === "comfyui" && !process.env.COMFYUI_API_URL)) {
+      throw new ImageProviderError("missing_configuration", `Image generation is not configured for ${provider}. Check the server image provider settings.`, "not_submitted");
     }
     const release = beginImageRequest(request);
     try {

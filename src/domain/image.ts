@@ -1,4 +1,4 @@
-export const WEATHER_IMAGE_PROMPT_VERSION = "weather-panels-v1";
+export const WEATHER_IMAGE_PROMPT_VERSION = "weather-panels-v2";
 
 export interface WeatherImagePrompt {
   version: typeof WEATHER_IMAGE_PROMPT_VERSION;

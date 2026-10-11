@@ -28,10 +28,10 @@ function forecast(now = noonChicago, timezone = "America/Chicago", offset = -18_
   return {
     timezone,
     utc_offset_seconds: offset,
-    current_units: { time: "unixtime", temperature_2m: "°C", wind_speed_10m: "km/h" },
-    current: { time: Math.floor(now / 1000), temperature_2m: 19.2, weather_code: 63, wind_speed_10m: 12.4, is_day: 1 },
-    daily_units: { time: "unixtime", temperature_2m_max: "°C", temperature_2m_min: "°C" },
-    daily: { time: [midnightUtc], temperature_2m_max: [23.4], temperature_2m_min: [10.8] },
+    current_units: { time: "unixtime", temperature_2m: "°C", apparent_temperature: "°C", relative_humidity_2m: "%", precipitation: "mm", cloud_cover: "%", pressure_msl: "hPa", wind_speed_10m: "km/h", wind_direction_10m: "°", wind_gusts_10m: "km/h" },
+    current: { time: Math.floor(now / 1000), temperature_2m: 19.2, apparent_temperature: 18.7, relative_humidity_2m: 72, precipitation: 0.4, cloud_cover: 85, pressure_msl: 1008.2, weather_code: 63, wind_speed_10m: 12.4, wind_direction_10m: 225, wind_gusts_10m: 24, is_day: 1 },
+    daily_units: { time: "unixtime", temperature_2m_max: "°C", temperature_2m_min: "°C", precipitation_probability_max: "%", precipitation_sum: "mm", uv_index_max: "", sunrise: "unixtime", sunset: "unixtime" },
+    daily: { time: [midnightUtc], temperature_2m_max: [23.4], temperature_2m_min: [10.8], precipitation_probability_max: [65], precipitation_sum: [3.2], uv_index_max: [5.3], sunrise: [midnightUtc + 21_600], sunset: [midnightUtc + 64_800] },
   };
 }
 
@@ -66,6 +66,10 @@ describe("forecast normalization", () => {
     const weather = parseForecast(forecast(), location, noonChicago);
     expect(weather).toMatchObject({
       temperatureC: 19.2, windKmh: 12.4, highC: 23.4, lowC: 10.8,
+      feelsLikeC: 18.7, humidityPercent: 72, precipitationMm: 0.4, cloudCoverPercent: 85,
+      pressureHpa: 1008.2, windDirectionDegrees: 225, windGustKmh: 24,
+      precipitationProbabilityPercent: 65, precipitationTodayMm: 3.2, uvIndexMax: 5.3,
+      sunrise: "2026-10-09T11:00:00.000Z", sunset: "2026-10-09T23:00:00.000Z",
       weatherCode: 63, category: "rain", condition: "Moderate rain",
       units: { temperature: "°C", wind: "km/h" },
       observedAt: "2026-10-09T17:00:00.000Z", localDate: "2026-10-09",
@@ -95,10 +99,9 @@ describe("forecast normalization", () => {
   it("finds today's daily record even if it is not the first array element", () => {
     const fixture = forecast();
     fixture.daily.time.unshift(fixture.daily.time[0] - 86_400);
-    fixture.daily.temperature_2m_max.unshift(99);
-    fixture.daily.temperature_2m_min.unshift(9);
-    // Keep the prior high valid but visibly different.
+    for (const values of Object.values(fixture.daily).slice(1)) values.unshift(values[0]!);
     fixture.daily.temperature_2m_max[0] = 70;
+    fixture.daily.temperature_2m_min[0] = 9;
     expect(parseForecast(fixture, location, noonChicago).highC).toBe(23.4);
   });
 

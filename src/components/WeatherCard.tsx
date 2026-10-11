@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Cloud, CloudFog, CloudLightning, CloudRain, CloudSnow, Sun, Moon, Wind, ArrowUp, ArrowDown, X, RefreshCw, Clock, Radio } from "lucide-react";
+import { useEffect, useRef, useState, type FocusEvent } from "react";
+import { Cloud, CloudFog, CloudLightning, CloudRain, CloudSnow, Sun, Moon, Wind, ArrowUp, ArrowDown, X, RefreshCw, Clock, Radio, ChevronDown, Droplets, Eye, Gauge, Sunrise, Sunset, Thermometer, WindArrowDown } from "lucide-react";
 import type { Location } from "@/domain/locations";
 import type { WeatherResponse, WeatherSnapshot } from "@/domain/weather";
 import { SpotlightCard } from "./reactbits/SpotlightCard";
@@ -15,6 +15,9 @@ export function WeatherCard({ location, index, focused, onRemove, onFocus, onWea
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
   const [clock, setClock] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsPinned, setDetailsPinned] = useState(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -62,14 +65,18 @@ export function WeatherCard({ location, index, focused, onRemove, onFocus, onWea
 
   const weather = response?.weather;
   const Icon = weather?.category === "rain" ? CloudRain : weather?.category === "snow" ? CloudSnow : weather?.category === "thunderstorm" ? CloudLightning : weather?.category === "fog" ? CloudFog : weather?.category === "cloudy" ? Cloud : weather?.isDay === false ? Moon : Sun;
-  return <article aria-label={`Weather for ${location.name}`} className={`weather-card ${focused ? "weather-card-focused" : ""}`} onClick={event => {
+  const localTime = (value: string) => new Intl.DateTimeFormat("en-GB", { timeZone: location.timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(value));
+  const closeOnBlur = (event: FocusEvent<HTMLElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null) && !detailsPinned) setDetailsOpen(false);
+  };
+  return <article aria-label={`Weather for ${location.name}`} className={`weather-card ${focused ? "weather-card-focused" : ""} ${detailsOpen ? "weather-card-details-open" : ""}`} onPointerEnter={event => { if (event.pointerType === "mouse") setDetailsOpen(true); }} onPointerLeave={event => { if (event.pointerType === "mouse" && !detailsPinned) setDetailsOpen(false); }} onBlur={closeOnBlur} onClick={event => {
     const target = event.target;
     if (target instanceof Element && target.closest("button, a, input, select, textarea")) return;
     onFocus(location.id);
   }}>
     <SpotlightCard>
       <div className="card-top"><span className="card-number">0{index + 1}</span><button className="icon-button" aria-label={`Remove ${location.name}`} onClick={() => onRemove(location.id)}><X size={16} /></button></div>
-      <div className="place-heading"><div><h2>{location.name}</h2><p>{[location.admin1, location.country].filter(Boolean).join(", ")}</p></div><Icon className={`weather-icon ${weather?.category ?? "loading"}`} size={40} strokeWidth={1.25} aria-hidden="true" /></div>
+      <div className="place-heading"><div><h2 ref={headingRef} tabIndex={-1}>{location.name}</h2><p>{[location.admin1, location.country].filter(Boolean).join(", ")}</p></div><Icon className={`weather-icon ${weather?.category ?? "loading"}`} size={40} strokeWidth={1.25} aria-hidden="true" /></div>
       {weather ? <>
         <div className="temperature">{temperature(weather.temperatureC)}<span>°C</span></div>
         <p className="condition">{weather.condition}</p>
@@ -79,7 +86,30 @@ export function WeatherCard({ location, index, focused, onRemove, onFocus, onWea
       {weather && error && <p className="card-warning" role="alert">Refresh failed. Displaying the last received weather. <button onClick={() => setRetry(value => value + 1)}>Retry</button></p>}
       {response?.warning && <p className="card-warning" role="status">{response.warning}</p>}
       <div className="card-bottom"><span><Clock size={12} aria-hidden="true" /><time suppressHydrationWarning>{clock || "Local time"}</time></span><button className="focus-button" aria-label={`${focused ? "In focus" : "Focus sky"} for ${location.name}`} aria-pressed={focused} onClick={() => onFocus(location.id)}><Radio size={12} aria-hidden="true" />{focused ? "In focus" : "Focus sky"}</button></div>
-      {weather && <p className="observation">Observed {new Intl.DateTimeFormat("en-GB", { timeZone: location.timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(weather.observedAt))} local</p>}
+      {weather && <p className="observation">Observed {localTime(weather.observedAt)} local</p>}
+      {weather && <>
+        <button className="weather-more-trigger" type="button" aria-expanded={detailsOpen} aria-controls={`weather-extra-${location.id}`} onFocus={() => setDetailsOpen(true)} onClick={() => setDetailsPinned(value => { const next = !value; setDetailsOpen(next); return next; })}>
+          More conditions <ChevronDown size={14} aria-hidden="true" />
+        </button>
+        <div className="weather-extra" id={`weather-extra-${location.id}`} role="region" aria-label={`Additional weather details for ${location.name}`} hidden={!detailsOpen}>
+          <div className="weather-extra-heading"><span>{location.name}</span><small>WEATHER DETAILS</small><button type="button" className="weather-extra-close" aria-label={`Close weather details for ${location.name}`} onClick={() => { setDetailsPinned(false); setDetailsOpen(false); window.requestAnimationFrame(() => headingRef.current?.focus()); }}><X size={13} /></button></div>
+          <div className="weather-extra-grid">
+            <span><Thermometer size={13} />Feels like<strong>{temperature(weather.feelsLikeC)}°C</strong></span>
+            <span><Droplets size={13} />Humidity<strong>{Math.round(weather.humidityPercent)}%</strong></span>
+            <span><CloudRain size={13} />Precip now<strong>{weather.precipitationMm.toFixed(1)} mm</strong></span>
+            <span><Cloud size={13} />Cloud cover<strong>{Math.round(weather.cloudCoverPercent)}%</strong></span>
+            <span><Gauge size={13} />Pressure<strong>{Math.round(weather.pressureHpa)} hPa</strong></span>
+            <span><Wind size={13} />Wind gusts<strong>{Math.round(weather.windGustKmh)} km/h</strong></span>
+            <span><Eye size={13} />Rain chance<strong>{Math.round(weather.precipitationProbabilityPercent)}%</strong></span>
+            <span><Droplets size={13} />Today’s precip<strong>{weather.precipitationTodayMm.toFixed(1)} mm</strong></span>
+            <span><Sunrise size={13} />Sunrise<strong>{localTime(weather.sunrise)}</strong></span>
+            <span><Sunset size={13} />Sunset<strong>{localTime(weather.sunset)}</strong></span>
+            <span><Sun size={13} />Max UV<strong>{weather.uvIndexMax.toFixed(1)}</strong></span>
+            <span><WindArrowDown size={13} style={{ transform: `rotate(${weather.windDirectionDegrees}deg)` }} />Wind direction<strong>{Math.round(weather.windDirectionDegrees)}°</strong></span>
+          </div>
+          <p>Modelled weather from Open‑Meteo · {Math.round(weather.windKmh)} km/h sustained wind</p>
+        </div>
+      </>}
     </SpotlightCard>
   </article>;
 }
