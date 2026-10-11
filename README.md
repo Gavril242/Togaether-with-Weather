@@ -13,13 +13,13 @@ npm ci
 npm run dev -- --port 3100
 ```
 
-Open <http://127.0.0.1:3100>. Add four places and reload to check that they return. The production site is [fourcast.misaland.me](https://fourcast.misaland.me).
+Open <http://127.0.0.1:3100>. Add four places and reload to check that they return. The production site is [fourcast.misaland.me](https://fourcast.misaland.me). Image generation is deliberately disabled on that demo deployment; the dashboard's weather features work as usual and an on-page notice links to setup steps.
 
 Open Meteo provides geocoding and the factual weather readings. I chose it because it includes both services without a key for this project. The dashboard requests Celsius, km/h, and each place's timezone. [Open Meteo terms](https://open-meteo.com/en/terms).
 
 ## Generate the image
 
-Fourcast builds the image prompt on the server from current Open‑Meteo responses. A hosted generation uses all four places. A local ComfyUI preview uses only the focused city, which keeps iteration clear while tuning the local model. Generated artwork is an interpretation, not a factual photo. The exact prompt appears beside the image in development only; production responses omit it. Requests are off by default and limited to one at a time. Hosted Gemini generation is capped at ten per day and one per visitor every ten minutes; local ComfyUI testing has no cost-based cooldown.
+Fourcast builds the image prompt on the server from current Open‑Meteo responses. A hosted generation uses all four places. A local ComfyUI preview uses only the focused city, which keeps iteration clear while tuning the local model. Generated artwork is an interpretation, not a factual photo. The exact prompt stays on the server and is never included in browser responses. Requests are off by default and limited to one at a time. Hosted Gemini generation is capped at ten per day and one per visitor every ten minutes; local ComfyUI testing has no cost-based cooldown. See the [reviewer image setup guide](docs/REVIEWER_IMAGE_SETUP.md) to enable your own provider locally.
 
 The intended hosted path uses Google's Nano Banana image model through Gemini. It is the right next step for a stronger city illustration, but image generation requires billing and image access on the Google project. I do not have that enabled, so my demonstration uses a local model instead. The dashboard remains usable without either image provider. See [Google's current model pricing](https://ai.google.dev/gemini-api/docs/pricing).
 
@@ -27,7 +27,7 @@ For local image testing, I added a ComfyUI provider and an isolated Windows setu
 
 ## Screenshots
 
-These screenshots use live weather and a local SDXL Turbo image for Timișoara: [dashboard](docs/screenshots/dashboard.jpg), [weather details](docs/screenshots/weather-details.jpg), and [generated city image with its development prompt](docs/screenshots/generated-city.jpg).
+These screenshots use live weather and a local SDXL Turbo image for Timișoara: [dashboard](docs/screenshots/dashboard.jpg), [weather details](docs/screenshots/weather-details.jpg), and [generated city image](docs/screenshots/generated-city.jpg).
 
 ## Weather details
 

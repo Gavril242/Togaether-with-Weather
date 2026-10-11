@@ -24,7 +24,7 @@ Application commands are in the README. The atmospheric shader and context lifec
 | Show local time | Injected clock tests cover date boundaries, DST, and fractional timezone offsets. | Weather phase |
 | Preserve partial success | An upstream failure affects its card while other cards remain usable. | Weather phase |
 | Generate one image | A provider adapter receives a prompt built from four validated weather records. | Image phase |
-| Show the exact prompt | Displayed prompt and stored generation snapshot match the submitted request. | Image phase |
+| Keep provider prompts private | The exact generated prompt stays server side; browser responses expose only its version and weather snapshot metadata. | Image phase |
 | Explain image failures | Refusal, unavailable configuration, rate limit, and uncertain timeout have distinct messages. | Image phase |
 | Protect public generation | Concurrent requests respect ownership, idempotency, capacity, and spending limits. | Public release |
 | Recover operations | Restart, disk failure, backup restore, and rollback drills produce recorded evidence. | Deployment release |
@@ -77,7 +77,7 @@ Use Playwright with controlled provider responses. Browser tests should exercise
 4. Type quickly, replace a query, and resolve responses in reverse order. Confirm cancelled and stale search results cannot replace current results.
 5. Remove a place while its weather loads, then add another. The old response cannot populate the replacement card. Test independent retries during a partial outage.
 6. Verify all weather fields and visible units against controlled fixtures. Advance the clock across a location's midnight and both DST transitions without changing other locations incorrectly.
-7. Generate with four successful locations. Confirm the image and exact prompt appear together. Refresh weather during generation and confirm the displayed generation snapshot remains unchanged.
+7. Generate with four successful locations. Confirm the image appears without exposing the exact prompt. Refresh weather during generation and confirm the generation snapshot metadata remains unchanged.
 8. Exercise refusal, rate limit, unavailable provider configuration, timeout, and storage failure. The dashboard remains usable and retry behavior follows the known job state.
 9. Reload during a durable generation job. Resume status polling, show completed output when available, and do not dispatch a duplicate image request.
 10. Test keyboard selection, focus movement, removal confirmation where applicable, error announcements, accessible names, and status messages with a screen reader compatible structure.

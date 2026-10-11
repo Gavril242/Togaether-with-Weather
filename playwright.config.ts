@@ -12,5 +12,11 @@ export default defineConfig({
     { name: "mobile", use: { ...devices["iPhone 13"], defaultBrowserType: "chromium" } },
     { name: "mobile-webkit", grep: /@webkit/, use: { ...devices["iPhone 13"], browserName: "webkit" } },
   ],
-  webServer: { command: "npm run build && npm run start -- --port 3100", url: "http://127.0.0.1:3100", reuseExistingServer: false, timeout: 120_000 },
+  webServer: {
+    command: "npm run build && npm run start -- --port 3100",
+    url: "http://127.0.0.1:3100",
+    reuseExistingServer: false,
+    timeout: 120_000,
+    env: { ...process.env, IMAGE_GENERATION_ENABLED: "true" },
+  },
 });

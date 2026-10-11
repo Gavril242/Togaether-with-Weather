@@ -24,7 +24,7 @@ The weather dashboard remains usable when image configuration or account capacit
 
 `buildWeatherImagePrompt` requires four distinct validated snapshots in dashboard order. It copies observations into bounded JSON and assigns top left, top right, bottom left, and bottom right panels. It describes real conditions, Celsius temperature, wind in km/h, daily range, and observation time in the location's timezone. Place names remain data. The prompt is a deterministic function of the snapshots and version, with no text model call.
 
-Persist the exact prompt and snapshots with each future job. Display that saved prompt beside its image. A preview made from today's cards must not replace an older image's prompt.
+Persist the exact prompt and snapshots with each future job for reproducibility and support. Do not return raw prompt text to the browser or display it beside the image. A preview made from today's cards must not replace an older image's snapshot metadata.
 
 | Adapter code | Meaning |
 | :--- | :--- |

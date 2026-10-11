@@ -144,7 +144,7 @@ export async function mockDashboardApi(page: Page, options: { consent?: "allow" 
       image: { data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jFtoAAAAASUVORK5CYII=", mimeType: "image/png", width: 1, height: 1, model: "fixture-image" },
       selectionLocationIds: body.locationIds,
       focusLocationId: focused ?? null,
-      prompt: { version: local ? "weather-city-v1" : "weather-panels-v2", text: local ? "One selected city scene" : "Four places, their observed weather, four panels.", locationIds: local ? [focused] : body.locationIds, observedAt: ["2026-10-09T17:00:00Z"] },
+      prompt: { version: local ? "weather-city-v1" : "weather-panels-v2", locationIds: local ? [focused] : body.locationIds, observedAt: ["2026-10-09T17:00:00Z"] },
     } });
   });
   return { failingWeather, failingSearches, requestedWeather, imageRequests, delaySearch, extraPlaces, failingRestorations, requestedRestorations, delayRestore };

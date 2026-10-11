@@ -11,7 +11,7 @@ export interface WeatherImageResult {
   image: { data: string; mimeType: GeneratedImage["mimeType"]; width: number; height: number; model: string };
   selectionLocationIds: readonly number[];
   focusLocationId: number | null;
-  prompt: { version: string; text?: string; locationIds: readonly number[]; observedAt: readonly string[] };
+  prompt: { version: string; locationIds: readonly number[]; observedAt: readonly string[] };
 }
 
 export function createWeatherImageService(options: {
@@ -55,8 +55,7 @@ export function createWeatherImageService(options: {
           width: image.width, height: image.height, model: image.model },
         selectionLocationIds: requestedIds,
         focusLocationId,
-        prompt: { version: prompt.version, ...(process.env.NODE_ENV === "production" ? {} : { text: prompt.text }),
-          locationIds: prompt.locationIds, observedAt: prompt.observedAt },
+        prompt: { version: prompt.version, locationIds: prompt.locationIds, observedAt: prompt.observedAt },
       };
     },
   };

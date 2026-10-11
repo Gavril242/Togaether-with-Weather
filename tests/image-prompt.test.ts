@@ -109,8 +109,9 @@ describe("weather image service", () => {
     const result = await service.generate([1, 2, 3, 4]);
     expect(calls).toEqual([[1], [2], [3], [4]]);
     expect(result.image).toMatchObject({ data: "AQID", mimeType: "image/png", width: 10, height: 5, model: "fixture" });
-    expect(result.prompt.text).toContain('"Place 4"');
-    expect(submittedPrompt).toBe(result.prompt.text);
+    expect(submittedPrompt).toContain('"Place 4"');
+    expect(result.prompt).not.toHaveProperty("text");
+    expect(result.prompt.locationIds).toEqual([1, 2, 3, 4]);
   });
 
   it("does not submit without explicit server opt-in or four unique verified locations", async () => {
@@ -137,7 +138,7 @@ describe("weather image service", () => {
     expect(result.prompt.locationIds).toEqual([3]);
   });
 
-  it("does not return exact prompt text in production responses", async () => {
+  it("never returns exact prompt text in image responses", async () => {
     vi.stubEnv("IMAGE_PROVIDER", "gemini");
     vi.stubEnv("NODE_ENV", "production");
     const service = createWeatherImageService({

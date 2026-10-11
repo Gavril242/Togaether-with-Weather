@@ -83,7 +83,7 @@ test("reveals richer forecast details with hover and a tappable pin control", as
   await expect(london.getByRole("heading", { name: "London" })).toBeFocused();
 });
 
-test("closes a pinned detail popover when the user selects another city", async ({ page }) => {
+test("keeps the clicked city details open and moves the panel to the newly selected city", async ({ page }) => {
   await mockDashboardApi(page);
   await seedPlaces(page, [places.london, places.tokyo]);
   await page.goto("/");
@@ -93,7 +93,10 @@ test("closes a pinned detail popover when the user selects another city", async 
   await expect(london.getByRole("region", { name: "Additional weather details for London" })).toBeVisible();
   await tokyo.getByRole("heading", { name: "Tokyo" }).click();
   await expect(london.getByRole("region", { name: "Additional weather details for London" })).toBeHidden();
-  await expect(tokyo.getByRole("region", { name: "Additional weather details for Tokyo" })).toBeHidden();
+  const tokyoPanel = tokyo.getByRole("region", { name: "Additional weather details for Tokyo" });
+  await expect(tokyoPanel).toBeVisible();
+  await page.locator(".hero").hover();
+  await expect(tokyoPanel).toBeVisible();
   await expect(tokyo.getByRole("button", { name: "In focus for Tokyo" })).toHaveAttribute("aria-pressed", "true");
 });
 
@@ -142,7 +145,7 @@ test("keeps four selected places across reload and allows removal and replacemen
     const locationIds = (route.request().postDataJSON() as { locationIds: number[] }).locationIds;
     return route.fulfill({ json: { image: { data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jFtoAAAAASUVORK5CYII=", mimeType: "image/png", width: 1, height: 1, model: "fixture-image" },
       selectionLocationIds: locationIds, focusLocationId: null,
-      prompt: { version: "weather-panels-v2", text: "Four places, their observed weather, four panels.", locationIds, observedAt: Array(4).fill("2026-10-09T17:00:00Z") } } });
+      prompt: { version: "weather-panels-v2", locationIds, observedAt: Array(4).fill("2026-10-09T17:00:00Z") } } });
   });
   await page.goto("/");
   await choosePlace(page, "Springfield", /Massachusetts/);
@@ -172,7 +175,8 @@ test("keeps four selected places across reload and allows removal and replacemen
   await expect(page.locator(".studio-status")).toContainText("Gemini project's quota");
   await page.getByRole("button", { name: "Generate weather image", exact: true }).click();
   await expect(page.getByAltText("AI-generated interpretation of the weather in your selected places")).toBeVisible();
-  await expect(page.locator(".image-prompt pre")).toContainText("four panels");
+  await expect(page.locator(".image-prompt")).toHaveCount(0);
+  await expect(page.locator(".image-output")).toHaveCSS("display", "block");
   const outputImage = page.getByAltText("AI-generated interpretation of the weather in your selected places");
   await expect(outputImage).toHaveAttribute("width", "1");
   await expect(outputImage).toHaveAttribute("height", "1");
@@ -197,7 +201,7 @@ test("local image generation sends only the focused city for its scene", async (
   await page.getByRole("button", { name: "Generate weather image", exact: true }).click();
   await expect(page.getByAltText("AI-generated weather scene inspired by London")).toBeVisible();
   expect(api.imageRequests.at(-1)).toEqual({ locationIds: [places.springfieldMassachusetts.id, places.london.id, places.tokyo.id, places.reykjavik.id], selectedLocationId: places.london.id });
-  await expect(page.locator(".image-prompt pre")).toContainText("One selected city scene");
+  await expect(page.locator(".image-prompt")).toHaveCount(0);
 });
 
 test("rejects a duplicate and does not fill another slot", async ({ page }) => {
