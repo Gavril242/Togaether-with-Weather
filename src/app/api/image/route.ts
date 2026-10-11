@@ -40,7 +40,7 @@ export async function POST(request: Request): Promise<Response> {
     if ((provider === "gemini" && !process.env.GEMINI_API_KEY?.trim()) || (provider === "comfyui" && !process.env.COMFYUI_API_URL)) {
       throw new ImageProviderError("missing_configuration", `Image generation is not configured for ${provider}. Check the server image provider settings.`, "not_submitted");
     }
-    const release = beginImageRequest(request);
+    const release = beginImageRequest(request, Date.now(), { billable: provider === "gemini" });
     try {
       const result = await generateWeatherImage(locationIds, request.signal);
       return Response.json(result, { headers: { "Cache-Control": "no-store" } });

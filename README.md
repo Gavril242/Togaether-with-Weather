@@ -19,7 +19,7 @@ Open Meteo provides geocoding and the factual weather readings. I chose it becau
 
 ## Generate the image
 
-Fourcast builds the image prompt on the server from four current Open‑Meteo responses. The prompt names each place and includes its measured conditions; the generated scene is an artistic interpretation, not a factual photo. The app shows the exact prompt beside the image. Requests are off by default, limited in memory to one at a time, ten per day for the server, and one per visitor every ten minutes.
+Fourcast builds the image prompt on the server from four current Open‑Meteo responses. The prompt names each place and includes its measured conditions; the generated scene is an artistic interpretation, not a factual photo. The app shows the exact prompt beside the image. Requests are off by default and limited to one at a time. Hosted Gemini generation is capped at ten per day and one per visitor every ten minutes; local ComfyUI testing has no cost-based cooldown.
 
 The reviewer path uses Gemini `gemini-3.1-flash-image`: copy `.env.example` to `.env.local`, set `GEMINI_API_KEY` and `IMAGE_GENERATION_ENABLED=true`, then restart the app. Google image generation needs a project with image access; the dashboard works without it. See [Google's current model pricing](https://ai.google.dev/gemini-api/docs/pricing).
 
