@@ -9,7 +9,9 @@ import { buildWeatherImagePrompt } from "./prompt";
 
 export interface WeatherImageResult {
   image: { data: string; mimeType: GeneratedImage["mimeType"]; width: number; height: number; model: string };
-  prompt: { version: string; text: string; locationIds: readonly number[]; observedAt: readonly string[] };
+  selectionLocationIds: readonly number[];
+  focusLocationId: number | null;
+  prompt: { version: string; text?: string; locationIds: readonly number[]; observedAt: readonly string[] };
 }
 
 export function createWeatherImageService(options: {
@@ -19,7 +21,7 @@ export function createWeatherImageService(options: {
   provider?: ImageProvider;
 } = {}) {
   return {
-    async generate(ids: unknown, signal?: AbortSignal): Promise<WeatherImageResult> {
+    async generate(ids: unknown, signal?: AbortSignal, selectedLocationId?: unknown): Promise<WeatherImageResult> {
       if (options.enabled !== true) {
         throw new ImageProviderError("missing_configuration", "Image generation is turned off. Set IMAGE_GENERATION_ENABLED=true in the server environment to enable it.", "not_submitted");
       }
@@ -27,9 +29,10 @@ export function createWeatherImageService(options: {
         || new Set(ids).size !== 4) {
         throw new ImageProviderError("invalid_configuration", "Choose four different places before creating an image.", "not_submitted");
       }
-      const weather = options.weather ?? getWeather;
-      const snapshots = await Promise.all((ids as number[]).map(async (id) => (await weather(id)).weather));
-      const prompt = buildWeatherImagePrompt(snapshots);
+      if (selectedLocationId !== undefined && (!locationIdSchema.safeParse(selectedLocationId).success || !ids.includes(selectedLocationId))) {
+        throw new ImageProviderError("invalid_configuration", "Choose a focused place from the four dashboard locations.", "not_submitted");
+      }
+      const requestedIds = ids as number[];
       const providerName = process.env.IMAGE_PROVIDER ?? "gemini";
       if (providerName !== "gemini" && providerName !== "comfyui") {
         throw new ImageProviderError("invalid_configuration", "IMAGE_PROVIDER must be gemini or comfyui.", "not_submitted");
@@ -37,6 +40,11 @@ export function createWeatherImageService(options: {
       if (providerName === "comfyui" && process.env.NODE_ENV === "production") {
         throw new ImageProviderError("invalid_configuration", "The ComfyUI provider is available only for local development. Configure the hosted image provider for production.", "not_submitted");
       }
+      const focusLocationId = providerName === "comfyui" ? (selectedLocationId as number | undefined) ?? requestedIds[0]! : null;
+      const weather = options.weather ?? getWeather;
+      const promptLocationIds = focusLocationId === null ? requestedIds : [focusLocationId];
+      const snapshots = await Promise.all(promptLocationIds.map(async (id) => (await weather(id)).weather));
+      const prompt = buildWeatherImagePrompt(snapshots);
       const key = options.apiKey ?? process.env.GEMINI_API_KEY;
       const provider = options.provider ?? (providerName === "comfyui"
         ? new ComfyUiImageProvider({ baseUrl: process.env.COMFYUI_API_URL, checkpoint: process.env.COMFYUI_CHECKPOINT })
@@ -45,7 +53,10 @@ export function createWeatherImageService(options: {
       return {
         image: { data: Buffer.from(image.bytes).toString("base64"), mimeType: image.mimeType,
           width: image.width, height: image.height, model: image.model },
-        prompt: { version: prompt.version, text: prompt.text, locationIds: prompt.locationIds, observedAt: prompt.observedAt },
+        selectionLocationIds: requestedIds,
+        focusLocationId,
+        prompt: { version: prompt.version, ...(process.env.NODE_ENV === "production" ? {} : { text: prompt.text }),
+          locationIds: prompt.locationIds, observedAt: prompt.observedAt },
       };
     },
   };

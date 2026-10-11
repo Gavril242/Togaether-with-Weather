@@ -23,13 +23,18 @@ export async function POST(request: Request): Promise<Response> {
     let parsed: unknown;
     try { parsed = JSON.parse(body); } catch { throw invalidInput("The image request is invalid."); }
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)
-      || !Object.hasOwn(parsed, "locationIds") || Object.keys(parsed).some((key) => key !== "locationIds")) {
+      || !Object.hasOwn(parsed, "locationIds") || Object.keys(parsed).some((key) => key !== "locationIds" && key !== "selectedLocationId")) {
       throw invalidInput("The image request is invalid.");
     }
     const locationIds = (parsed as { locationIds?: unknown }).locationIds;
+    const selectedLocationId = (parsed as { selectedLocationId?: unknown }).selectedLocationId;
     if (!Array.isArray(locationIds) || locationIds.length !== 4
       || locationIds.some((id) => !locationIdSchema.safeParse(id).success)
       || new Set(locationIds).size !== 4) throw invalidInput("Choose four different places before creating an image.");
+    if (selectedLocationId !== undefined
+      && (!locationIdSchema.safeParse(selectedLocationId).success || !locationIds.includes(selectedLocationId))) {
+      throw invalidInput("Choose a focused place from the four dashboard locations.");
+    }
     const provider = process.env.IMAGE_PROVIDER ?? "gemini";
     if (process.env.IMAGE_GENERATION_ENABLED !== "true") {
       throw new ImageProviderError("missing_configuration", "Image generation is turned off. Set IMAGE_GENERATION_ENABLED=true in the server environment.", "not_submitted");
@@ -42,7 +47,7 @@ export async function POST(request: Request): Promise<Response> {
     }
     const release = beginImageRequest(request, Date.now(), { billable: provider === "gemini" });
     try {
-      const result = await generateWeatherImage(locationIds, request.signal);
+      const result = await generateWeatherImage(locationIds, request.signal, selectedLocationId);
       return Response.json(result, { headers: { "Cache-Control": "no-store" } });
     } finally {
       release();

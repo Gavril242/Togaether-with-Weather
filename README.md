@@ -19,11 +19,15 @@ Open Meteo provides geocoding and the factual weather readings. I chose it becau
 
 ## Generate the image
 
-Fourcast builds the image prompt on the server from four current Open‑Meteo responses. The prompt names each place and includes its measured conditions; the generated scene is an artistic interpretation, not a factual photo. The app shows the exact prompt beside the image. Requests are off by default and limited to one at a time. Hosted Gemini generation is capped at ten per day and one per visitor every ten minutes; local ComfyUI testing has no cost-based cooldown.
+Fourcast builds the image prompt on the server from current Open‑Meteo responses. A hosted generation uses all four places. A local ComfyUI preview uses only the focused city, which keeps iteration clear while tuning the local model. Generated artwork is an interpretation, not a factual photo. The exact prompt appears beside the image in development only; production responses omit it. Requests are off by default and limited to one at a time. Hosted Gemini generation is capped at ten per day and one per visitor every ten minutes; local ComfyUI testing has no cost-based cooldown.
 
-The reviewer path uses Gemini `gemini-3.1-flash-image`: copy `.env.example` to `.env.local`, set `GEMINI_API_KEY` and `IMAGE_GENERATION_ENABLED=true`, then restart the app. Google image generation needs a project with image access; the dashboard works without it. See [Google's current model pricing](https://ai.google.dev/gemini-api/docs/pricing).
+The intended hosted path uses Google's Nano Banana image model through Gemini. It is the right next step for a stronger city illustration, but image generation requires billing and image access on the Google project. I do not have that enabled, so my demonstration uses a local model instead. The dashboard remains usable without either image provider. See [Google's current model pricing](https://ai.google.dev/gemini-api/docs/pricing).
 
-For local image testing, I added a ComfyUI provider and an isolated Windows setup for my Radeon RX 9070 XT. The app sends work only to `127.0.0.1`; it does not expose the local model or use it in production. Follow [the local ComfyUI setup](docs/LOCAL_IMAGE_GENERATION.md). SDXL Turbo is licensed for non-commercial use, which is why this is a local development option rather than the hosted reviewer default.
+For local image testing, I added a ComfyUI provider and an isolated Windows setup for my Radeon RX 9070 XT. With the resources available, the setup uses SDXL Turbo at a modest resolution and generates one selected city at a time. It is a useful local integration demo, though image quality is limited and it does not match the intended hosted model. The app sends work only to `127.0.0.1`; it does not expose the local model or use it in production. Follow [the local ComfyUI setup](docs/LOCAL_IMAGE_GENERATION.md). SDXL Turbo is licensed for non-commercial use, which is why this is a local development option rather than the hosted reviewer default.
+
+## Screenshots
+
+These screenshots use live weather and a local SDXL Turbo image for Timișoara: [dashboard](docs/screenshots/dashboard.jpg), [weather details](docs/screenshots/weather-details.jpg), and [generated city image with its development prompt](docs/screenshots/generated-city.jpg).
 
 ## Weather details
 

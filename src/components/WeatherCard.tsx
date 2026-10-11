@@ -7,16 +7,17 @@ import type { WeatherResponse, WeatherSnapshot } from "@/domain/weather";
 import { SpotlightCard } from "./reactbits/SpotlightCard";
 import { readApiJson } from "@/lib/read-api-json";
 
-type Props = { location: Location; index: number; focused: boolean; onRemove: (id: number) => void; onFocus: (id: number) => void; onWeather: (id: number, weather: WeatherSnapshot | null) => void };
+type Props = { location: Location; index: number; focused: boolean; focusRevision: number; onRemove: (id: number) => void; onFocus: (id: number) => void; onWeather: (id: number, weather: WeatherSnapshot | null) => void };
 const temperature = (value: number) => Math.round(value);
 
-export function WeatherCard({ location, index, focused, onRemove, onFocus, onWeather }: Props) {
+export function WeatherCard({ location, index, focused, focusRevision, onRemove, onFocus, onWeather }: Props) {
   const [response, setResponse] = useState<WeatherResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
   const [clock, setClock] = useState("");
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [detailsPinned, setDetailsPinned] = useState(false);
+  const [detailState, setDetailState] = useState({ open: false, pinned: false, focusRevision: -1 });
+  const detailsOpen = detailState.open && detailState.focusRevision === focusRevision;
+  const detailsPinned = detailState.pinned && detailState.focusRevision === focusRevision;
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -66,14 +67,24 @@ export function WeatherCard({ location, index, focused, onRemove, onFocus, onWea
   const weather = response?.weather;
   const Icon = weather?.category === "rain" ? CloudRain : weather?.category === "snow" ? CloudSnow : weather?.category === "thunderstorm" ? CloudLightning : weather?.category === "fog" ? CloudFog : weather?.category === "cloudy" ? Cloud : weather?.isDay === false ? Moon : Sun;
   const localTime = (value: string) => new Intl.DateTimeFormat("en-GB", { timeZone: location.timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(value));
-  const closeOnBlur = (event: FocusEvent<HTMLElement>) => {
-    if (!event.currentTarget.contains(event.relatedTarget as Node | null) && !detailsPinned) setDetailsOpen(false);
-  };
-  return <article aria-label={`Weather for ${location.name}`} className={`weather-card ${focused ? "weather-card-focused" : ""} ${detailsOpen ? "weather-card-details-open" : ""}`} onPointerEnter={event => { if (event.pointerType === "mouse") setDetailsOpen(true); }} onPointerLeave={event => { if (event.pointerType === "mouse" && !detailsPinned) setDetailsOpen(false); }} onBlur={closeOnBlur} onClick={event => {
-    const target = event.target;
-    if (target instanceof Element && target.closest("button, a, input, select, textarea")) return;
+  const hideDetails = () => setDetailState({ open: false, pinned: false, focusRevision });
+  const showDetails = () => setDetailState({ open: true, pinned: false, focusRevision });
+  const togglePinnedDetails = () => setDetailState(previous => {
+    const pinned = previous.focusRevision === focusRevision ? !previous.pinned : true;
+    return { open: pinned, pinned, focusRevision };
+  });
+  const focusLocation = () => {
+    hideDetails();
     onFocus(location.id);
-  }}>
+  };
+  const closeOnBlur = (event: FocusEvent<HTMLElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null) && !detailsPinned) hideDetails();
+  };
+  return <article aria-label={`Weather for ${location.name}`} className={`weather-card ${focused ? "weather-card-focused" : ""} ${detailsOpen ? "weather-card-details-open" : ""}`} onPointerEnter={event => { if (event.pointerType === "mouse") showDetails(); }} onPointerLeave={event => { if (event.pointerType === "mouse" && !detailsPinned) hideDetails(); }} onBlur={closeOnBlur} onClick={event => {
+    const target = event.target;
+    if (target instanceof Element && target.closest("button, a, input, select, textarea, .weather-extra")) return;
+    focusLocation();
+    }}>
     <SpotlightCard>
       <div className="card-top"><span className="card-number">0{index + 1}</span><button className="icon-button" aria-label={`Remove ${location.name}`} onClick={() => onRemove(location.id)}><X size={16} /></button></div>
       <div className="place-heading"><div><h2 ref={headingRef} tabIndex={-1}>{location.name}</h2><p>{[location.admin1, location.country].filter(Boolean).join(", ")}</p></div><Icon className={`weather-icon ${weather?.category ?? "loading"}`} size={40} strokeWidth={1.25} aria-hidden="true" /></div>
@@ -85,14 +96,14 @@ export function WeatherCard({ location, index, focused, onRemove, onFocus, onWea
       </> : error ? <div className="card-error" role="alert"><Cloud size={32} strokeWidth={1} /><p>{error}</p><button className="text-button" onClick={() => { setError(null); setRetry(value => value + 1); }}><RefreshCw size={14} />Retry weather</button></div> : <div className="weather-loading" aria-label="Loading weather"><span /><span /><p>Reading the sky…</p></div>}
       {weather && error && <p className="card-warning" role="alert">Refresh failed. Displaying the last received weather. <button onClick={() => setRetry(value => value + 1)}>Retry</button></p>}
       {response?.warning && <p className="card-warning" role="status">{response.warning}</p>}
-      <div className="card-bottom"><span><Clock size={12} aria-hidden="true" /><time suppressHydrationWarning>{clock || "Local time"}</time></span><button className="focus-button" aria-label={`${focused ? "In focus" : "Focus sky"} for ${location.name}`} aria-pressed={focused} onClick={() => onFocus(location.id)}><Radio size={12} aria-hidden="true" />{focused ? "In focus" : "Focus sky"}</button></div>
+      <div className="card-bottom"><span><Clock size={12} aria-hidden="true" /><time suppressHydrationWarning>{clock || "Local time"}</time></span><button className="focus-button" aria-label={`${focused ? "In focus" : "Focus sky"} for ${location.name}`} aria-pressed={focused} onClick={focusLocation}><Radio size={12} aria-hidden="true" />{focused ? "In focus" : "Focus sky"}</button></div>
       {weather && <p className="observation">Observed {localTime(weather.observedAt)} local</p>}
-      {weather && <>
-        <button className="weather-more-trigger" type="button" aria-expanded={detailsOpen} aria-controls={`weather-extra-${location.id}`} onFocus={() => setDetailsOpen(true)} onClick={() => setDetailsPinned(value => { const next = !value; setDetailsOpen(next); return next; })}>
-          More conditions <ChevronDown size={14} aria-hidden="true" />
-        </button>
-        <div className="weather-extra" id={`weather-extra-${location.id}`} role="region" aria-label={`Additional weather details for ${location.name}`} hidden={!detailsOpen}>
-          <div className="weather-extra-heading"><span>{location.name}</span><small>WEATHER DETAILS</small><button type="button" className="weather-extra-close" aria-label={`Close weather details for ${location.name}`} onClick={() => { setDetailsPinned(false); setDetailsOpen(false); window.requestAnimationFrame(() => headingRef.current?.focus()); }}><X size={13} /></button></div>
+      {weather && <button className="weather-more-trigger" type="button" aria-expanded={detailsOpen} aria-controls={`weather-extra-${location.id}`} onFocus={showDetails} onClick={togglePinnedDetails}>
+        More conditions <ChevronDown size={14} aria-hidden="true" />
+      </button>}
+    </SpotlightCard>
+    {weather && <div className="weather-extra" id={`weather-extra-${location.id}`} role="region" aria-label={`Additional weather details for ${location.name}`} hidden={!detailsOpen}>
+          <div className="weather-extra-heading"><span>{location.name}</span><small>WEATHER DETAILS</small><button type="button" className="weather-extra-close" aria-label={`Close weather details for ${location.name}`} onClick={() => { hideDetails(); window.requestAnimationFrame(() => headingRef.current?.focus()); }}><X size={13} /></button></div>
           <div className="weather-extra-grid">
             <span><Thermometer size={13} />Feels like<strong>{temperature(weather.feelsLikeC)}°C</strong></span>
             <span><Droplets size={13} />Humidity<strong>{Math.round(weather.humidityPercent)}%</strong></span>
@@ -108,8 +119,6 @@ export function WeatherCard({ location, index, focused, onRemove, onFocus, onWea
             <span><WindArrowDown size={13} style={{ transform: `rotate(${weather.windDirectionDegrees}deg)` }} />Wind direction<strong>{Math.round(weather.windDirectionDegrees)}°</strong></span>
           </div>
           <p>Modelled weather from Open‑Meteo · {Math.round(weather.windKmh)} km/h sustained wind</p>
-        </div>
-      </>}
-    </SpotlightCard>
+    </div>}
   </article>;
 }

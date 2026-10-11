@@ -76,6 +76,7 @@ export function createAtmosphereScene(
   let timezone = "UTC";
   let intensity = 0.5;
   let lastClockUpdate = -Infinity;
+  const targets = { daylight: 0.4, twilight: 0, sunX: 0.5, sunY: 0.8, cloudiness: 0.15, rain: 0, snow: 0, fog: 0 };
 
   const cancel = () => {
     if (frameId) cancelAnimationFrame(frameId);
@@ -106,9 +107,10 @@ export function createAtmosphereScene(
 
   const clock = () => {
     const light = daylightAt(new Date(), timezone);
-    uniforms.uDaylight.value = light.daylight;
-    uniforms.uTwilight.value = light.twilight;
-    uniforms.uSun.value.set(light.sunX, light.sunY);
+    targets.daylight = light.daylight;
+    targets.twilight = light.twilight;
+    targets.sunX = light.sunX;
+    targets.sunY = light.sunY;
   };
 
   const fail = () => {
@@ -136,6 +138,15 @@ export function createAtmosphereScene(
     }
     // Only visible, rendered frames advance precipitation and cloud movement.
     uniforms.uTime.value += Math.min(delta / 1000, 0.1);
+    const blend = 1 - Math.exp(-Math.min(delta, 100) / 850);
+    uniforms.uDaylight.value += (targets.daylight - uniforms.uDaylight.value) * blend;
+    uniforms.uTwilight.value += (targets.twilight - uniforms.uTwilight.value) * blend;
+    uniforms.uSun.value.x += (targets.sunX - uniforms.uSun.value.x) * blend;
+    uniforms.uSun.value.y += (targets.sunY - uniforms.uSun.value.y) * blend;
+    uniforms.uCloudiness.value += (targets.cloudiness - uniforms.uCloudiness.value) * blend;
+    uniforms.uRain.value += (targets.rain - uniforms.uRain.value) * blend;
+    uniforms.uSnow.value += (targets.snow - uniforms.uSnow.value) * blend;
+    uniforms.uFog.value += (targets.fog - uniforms.uFog.value) * blend;
     if (now - lastClockUpdate > 30_000) {
       clock();
       lastClockUpdate = now;
@@ -189,7 +200,7 @@ export function createAtmosphereScene(
     condition = nextCondition;
     timezone = nextTimezone;
     intensity = normalizeIntensity(nextIntensity);
-    uniforms.uCloudiness.value = {
+    targets.cloudiness = {
       clear: 0.12,
       cloudy: 0.76,
       rain: 0.88,
@@ -197,9 +208,9 @@ export function createAtmosphereScene(
       storm: 0.96,
       fog: 0.50,
     }[condition];
-    uniforms.uRain.value = condition === "rain" || condition === "storm" ? intensity : 0;
-    uniforms.uSnow.value = condition === "snow" ? intensity : 0;
-    uniforms.uFog.value = condition === "fog" ? intensity : 0;
+    targets.rain = condition === "rain" || condition === "storm" ? intensity : 0;
+    targets.snow = condition === "snow" ? intensity : 0;
+    targets.fog = condition === "fog" ? intensity : 0;
     clock();
   };
 

@@ -13,7 +13,9 @@ import { readApiJson } from "@/lib/read-api-json";
 
 type WeatherImageResponse = {
   image: { data: string; mimeType: "image/png" | "image/jpeg" | "image/webp"; width: number; height: number; model: string };
-  prompt: { version: string; text: string; locationIds: number[]; observedAt: string[] };
+  selectionLocationIds: number[];
+  focusLocationId: number | null;
+  prompt: { version: string; text?: string; locationIds: number[]; observedAt: string[] };
 };
 
 const Atmosphere = dynamic(() => import("./atmosphere/Atmosphere"), { ssr: false });
@@ -23,7 +25,8 @@ export default function WeatherDashboard() {
   const { locations, storageError } = selection;
   const [weather, setWeather] = useState<Record<number, WeatherSnapshot>>({});
   const [focusedId, setRawFocusedId] = useState<number | null>(null);
-  const setFocusedId = (id: number) => startTransition(() => setRawFocusedId(id));
+  const [focusRevision, setFocusRevision] = useState(0);
+  const setFocusedId = (id: number) => startTransition(() => { setRawFocusedId(id); setFocusRevision(value => value + 1); });
   const [ambient, setAmbient] = useState(true);
   const [image, setImage] = useState<WeatherImageResponse | null>(null);
   const [imageMessage, setImageMessage] = useState("");
@@ -45,8 +48,9 @@ export default function WeatherDashboard() {
   }), []);
   const condition: AtmosphereCondition = focus?.category === "thunderstorm" ? "storm" : focus?.category ?? "cloudy";
   const complete = locations.length === 4 && locations.every(place => weather[place.id]);
-  const currentImage = image && image.prompt.locationIds.length === locations.length
-    && image.prompt.locationIds.every((id, index) => id === locations[index]?.id) ? image : null;
+  const currentImage = image && image.selectionLocationIds.length === locations.length
+    && image.selectionLocationIds.every((id, index) => id === locations[index]?.id)
+    && (image.focusLocationId === null || image.focusLocationId === selectedFocus?.id) ? image : null;
 
   const generateImage = async () => {
     if (!complete || generating) return;
@@ -54,7 +58,7 @@ export default function WeatherDashboard() {
     try {
       const response = await fetch("/api/image", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ locationIds: locations.map(location => location.id) }),
+        body: JSON.stringify({ locationIds: locations.map(location => location.id), selectedLocationId: selectedFocus?.id }),
       });
       const data = await readApiJson<WeatherImageResponse & { error?: { message?: string } }>(response,
         "The image service is temporarily unavailable. Please try again.");
@@ -73,11 +77,11 @@ export default function WeatherDashboard() {
         <section className="hero"><div className="hero-copy"><p className="eyebrow"><Globe2 size={12} aria-hidden="true" />A small window into the world</p><h1>Four places.<br /><span>One atmosphere.</span></h1><p className="hero-description">The weather where you are. And where you wish you were. <br className="desktop-break" />Choose four places and watch their skies come together.</p></div><div className="hero-note"><span className="note-line" /><p>{selectedFocus ? <>Your atmosphere follows<br /><strong>{selectedFocus.name}</strong><br /><small>{focus?.condition ?? "Connecting to its sky"}</small></> : <>A different sky.<br />A different point of view.<br /><small>Start with a place you love.</small></>}</p></div></section>
         <div className="locations-toolbar"><LocationSearch full={locations.length === 4} inputRef={searchInput} /><div className="location-progress"><div>{Array.from({ length: 4 }, (_, index) => <span key={index} className={index < locations.length ? "filled" : ""} />)}</div><p aria-live="polite">{locations.length} of 4 places</p></div></div>
         {storageError && <p className="notice" role="alert">{storageError}</p>}
-        <section className="weather-grid" aria-label="Your places"><ViewTransition enter="card-enter" exit="card-exit">{locations.map((location, index) => <WeatherCard key={location.id} location={location} index={index} focused={location.id === selectedFocus?.id} onRemove={handleRemove} onFocus={setFocusedId} onWeather={onWeather} />)}{Array.from({ length: 4 - locations.length }, (_, index) => <div className="empty-card" key={`empty-${index}`}><span className="card-number">0{locations.length + index + 1}</span><div className="empty-card-center"><span className="plus-ring"><Plus size={22} strokeWidth={1} /></span><p>{locations.length === 0 && index === 0 ? "Your first place" : "A new perspective"}</p><small>Search above to add a place</small></div><span className="empty-card-bottom">A sky waiting to be discovered<ArrowUpRight size={14} /></span></div>)}</ViewTransition></section>
-        <section className="image-studio" aria-labelledby="studio-heading"><div className="studio-copy"><p className="eyebrow"><Sparkles size={13} />The weather, imagined</p><h2 id="studio-heading">Every sky tells a story.</h2><p>One original image, composed from the weather <br className="desktop-break" />in all four places. The exact prompt stays beside it.</p><button className="generate-button" disabled={!complete || generating} aria-label="Generate weather image" onClick={() => void generateImage()}><Sparkles size={17} />{generating ? "Creating image…" : "Generate image"}<ArrowUpRight size={17} /></button><p className="studio-status" role={imageMessage ? "alert" : undefined}>{imageMessage || (generating ? "One request is in progress. It will not be retried automatically." : complete ? currentImage ? "Your image and the exact prompt are ready below." : "Your four places are ready. Create an image when you are." : "Add four places and wait for their weather to load.")}</p></div><div className="studio-art" aria-hidden="true"><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-mark"><CloudSun size={56} strokeWidth={0.8} /><span>FOUR SKIES. ONE FRAME.</span></div><div className="art-coordinates">01 / 02 / 03 / 04</div></div></section>
-        {currentImage && <section className="image-output" aria-label="Generated weather image and prompt">
-          <figure><Image src={`data:${currentImage.image.mimeType};base64,${currentImage.image.data}`} alt="AI-generated four-panel interpretation of the weather in your selected places" width={currentImage.image.width} height={currentImage.image.height} unoptimized /><figcaption>Created with {currentImage.image.model}. Readings remain sourced from Open Meteo.</figcaption></figure>
-          <details className="image-prompt" open><summary>Exact weather prompt</summary><pre>{currentImage.prompt.text}</pre></details>
+        <section className="weather-grid" aria-label="Your places"><ViewTransition enter="card-enter" exit="card-exit">{locations.map((location, index) => <WeatherCard key={location.id} location={location} index={index} focused={location.id === selectedFocus?.id} focusRevision={focusRevision} onRemove={handleRemove} onFocus={setFocusedId} onWeather={onWeather} />)}{Array.from({ length: 4 - locations.length }, (_, index) => <div className="empty-card" key={`empty-${index}`}><span className="card-number">0{locations.length + index + 1}</span><div className="empty-card-center"><span className="plus-ring"><Plus size={22} strokeWidth={1} /></span><p>{locations.length === 0 && index === 0 ? "Your first place" : "A new perspective"}</p><small>Search above to add a place</small></div><span className="empty-card-bottom">A sky waiting to be discovered<ArrowUpRight size={14} /></span></div>)}</ViewTransition></section>
+        <section className="image-studio" aria-labelledby="studio-heading"><div className="studio-copy"><p className="eyebrow"><Sparkles size={13} />The weather, imagined</p><h2 id="studio-heading">Every sky tells a story.</h2><p>An image shaped by the weather in all four places. Local previews focus on the selected city.</p><button className="generate-button" disabled={!complete || generating} aria-label="Generate weather image" onClick={() => void generateImage()}><Sparkles size={17} />{generating ? "Creating image…" : "Generate image"}<ArrowUpRight size={17} /></button><p className="studio-status" role={imageMessage ? "alert" : undefined}>{imageMessage || (generating ? "One request is in progress. It will not be retried automatically." : complete ? currentImage ? "Your image and the exact prompt are ready below." : "Your four places are ready. Create an image when you are." : "Add four places and wait for their weather to load.")}</p></div><div className="studio-art" aria-hidden="true"><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-mark"><CloudSun size={56} strokeWidth={0.8} /><span>FOUR SKIES. ONE FRAME.</span></div><div className="art-coordinates">01 / 02 / 03 / 04</div></div></section>
+        {currentImage && <section className={`image-output ${currentImage.prompt.text ? "has-prompt" : ""}`} aria-label="Generated weather image and prompt">
+          <figure><Image src={`data:${currentImage.image.mimeType};base64,${currentImage.image.data}`} alt={currentImage.focusLocationId === null ? "AI-generated interpretation of the weather in your selected places" : `AI-generated weather scene inspired by ${locations.find(place => place.id === currentImage.focusLocationId)?.name ?? "the focused city"}`} width={currentImage.image.width} height={currentImage.image.height} unoptimized /><figcaption>Created with {currentImage.image.model}{currentImage.focusLocationId === null ? ". Weather readings remain sourced from Open Meteo." : ` · Local preview for ${locations.find(place => place.id === currentImage.focusLocationId)?.name ?? "the focused city"}.`}</figcaption></figure>
+          {currentImage.prompt.text && <details className="image-prompt" open><summary>Exact weather prompt</summary><pre>{currentImage.prompt.text}</pre></details>}
         </section>}
       </main>
       <footer><span>Made for the moments between places.</span><a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Weather by Open Meteo<ArrowUpRight size={12} /></a><span>°C / km/h</span></footer>

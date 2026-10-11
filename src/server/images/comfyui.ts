@@ -68,9 +68,9 @@ function promptWorkflow(prompt: string, checkpoint: string, seed: number): Recor
   return {
     "1": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: checkpoint } },
     "2": { class_type: "CLIPTextEncode", inputs: { text: prompt, clip: ["1", 1] } },
-    "3": { class_type: "CLIPTextEncode", inputs: { text: "", clip: ["1", 1] } },
+    "3": { class_type: "CLIPTextEncode", inputs: { text: "garden, flower field, botanical close-up, forest, dense foliage, countryside, cartoon, low detail, deformed buildings, text, watermark", clip: ["1", 1] } },
     "4": { class_type: "EmptyLatentImage", inputs: { width: 768, height: 512, batch_size: 1 } },
-    "5": { class_type: "KSampler", inputs: { seed, steps: 4, cfg: 0, sampler_name: "euler", scheduler: "sgm_uniform", denoise: 1, model: ["1", 0], positive: ["2", 0], negative: ["3", 0], latent_image: ["4", 0] } },
+    "5": { class_type: "KSampler", inputs: { seed, steps: 4, cfg: 2, sampler_name: "euler", scheduler: "sgm_uniform", denoise: 1, model: ["1", 0], positive: ["2", 0], negative: ["3", 0], latent_image: ["4", 0] } },
     "6": { class_type: "VAEDecode", inputs: { samples: ["5", 0], vae: ["1", 2] } },
     "7": { class_type: "SaveImage", inputs: { filename_prefix: "fourcast-weather", images: ["6", 0] } },
   };
@@ -127,7 +127,7 @@ export class ComfyUiImageProvider implements ImageProvider {
 
   async generate(prompt: WeatherImagePrompt, signal?: AbortSignal): Promise<GeneratedImage> {
     if (signal?.aborted) throw new ImageProviderError("cancelled", "Image generation was cancelled before submission.", "not_submitted");
-    if (!prompt.text.trim() || prompt.text.length > 12_000 || prompt.locationIds.length !== 4) {
+    if (!prompt.text.trim() || prompt.text.length > 12_000 || (prompt.locationIds.length !== 1 && prompt.locationIds.length !== 4)) {
       throw new ImageProviderError("invalid_configuration", "The weather image prompt is invalid.", "not_submitted");
     }
     const controller = new AbortController();

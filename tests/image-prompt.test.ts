@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WeatherSnapshot } from "../src/domain/weather";
 import { buildWeatherImagePrompt } from "../src/server/images/prompt";
 import { createWeatherImageService } from "../src/server/images/service";
@@ -47,6 +47,15 @@ function snapshot(id: number, overrides: Partial<WeatherSnapshot> = {}): Weather
 const fourSnapshots = () => [snapshot(1), snapshot(2), snapshot(3), snapshot(4)];
 
 describe("weather image prompt", () => {
+  it("builds a full-frame prompt for one selected city", () => {
+    const result = buildWeatherImagePrompt([snapshot(3)]);
+    expect(result.version).toBe("weather-city-v1");
+    expect(result.locationIds).toEqual([3]);
+    expect(result.text).toContain("realistic travel photograph of a European city center");
+    expect(result.text).toContain('"Place 3"');
+    expect(result.text).not.toContain("2 by 2 arrangement");
+  });
+
   it("includes the four observations, local observation times, and fixed panel order deterministically", () => {
     const snapshots = fourSnapshots();
     snapshots[1] = snapshot(2, { timezone: "America/New_York", temperatureC: 22.6, condition: "Clear sky", isDay: true });
@@ -68,7 +77,7 @@ describe("weather image prompt", () => {
   });
 
   it("rejects missing weather, duplicate locations, and unusable measurements", () => {
-    expect(() => buildWeatherImagePrompt(fourSnapshots().slice(0, 3))).toThrow("four locations");
+    expect(() => buildWeatherImagePrompt(fourSnapshots().slice(0, 3))).toThrow("one focused place or four places");
     expect(() => buildWeatherImagePrompt([snapshot(1), snapshot(1), snapshot(3), snapshot(4)])).toThrow("different locations");
     expect(() => buildWeatherImagePrompt([snapshot(1, { temperatureC: Number.NaN }), ...fourSnapshots().slice(1)])).toThrow("invalid measurement");
     expect(() => buildWeatherImagePrompt([snapshot(1, { highC: 0, lowC: 10 }), ...fourSnapshots().slice(1)])).toThrow("daily range");
@@ -87,6 +96,8 @@ describe("weather image prompt", () => {
 });
 
 describe("weather image service", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   it("builds a server prompt from four fetched snapshots and returns the generated image", async () => {
     const calls: number[][] = [];
     let submittedPrompt = "";
@@ -108,5 +119,34 @@ describe("weather image service", () => {
       .rejects.toMatchObject({ code: "missing_configuration", outcome: "not_submitted" });
     await expect(createWeatherImageService({ enabled: true, provider }).generate([1, 1, 3, 4]))
       .rejects.toMatchObject({ code: "invalid_configuration", outcome: "not_submitted" });
+  });
+
+  it("uses only the selected city for a local ComfyUI preview", async () => {
+    vi.stubEnv("IMAGE_PROVIDER", "comfyui");
+    vi.stubEnv("NODE_ENV", "development");
+    const calls: number[] = [];
+    const service = createWeatherImageService({
+      enabled: true,
+      weather: async (id) => { calls.push(id); return { weather: snapshot(id) }; },
+      provider: { generate: async () => ({ bytes: new Uint8Array([1]), mimeType: "image/png", width: 10, height: 10, model: "fixture" }) },
+    });
+    const result = await service.generate([1, 2, 3, 4], undefined, 3);
+    expect(calls).toEqual([3]);
+    expect(result.selectionLocationIds).toEqual([1, 2, 3, 4]);
+    expect(result.focusLocationId).toBe(3);
+    expect(result.prompt.locationIds).toEqual([3]);
+  });
+
+  it("does not return exact prompt text in production responses", async () => {
+    vi.stubEnv("IMAGE_PROVIDER", "gemini");
+    vi.stubEnv("NODE_ENV", "production");
+    const service = createWeatherImageService({
+      enabled: true,
+      weather: async (id) => ({ weather: snapshot(id) }),
+      provider: { generate: async () => ({ bytes: new Uint8Array([1]), mimeType: "image/png", width: 10, height: 10, model: "fixture" }) },
+    });
+    const result = await service.generate([1, 2, 3, 4]);
+    expect(result.prompt).not.toHaveProperty("text");
+    expect(result.prompt.locationIds).toEqual([1, 2, 3, 4]);
   });
 });

@@ -48,6 +48,12 @@ test("reveals richer forecast details with hover and a tappable pin control", as
     await london.getByRole("button", { name: "More conditions" }).tap();
     await expect(panel).toBeVisible();
     await expect(panel).toContainText("Humidity");
+    const panelBox = await panel.boundingBox();
+    const cardBox = await london.locator(".spotlight-card").boundingBox();
+    expect(panelBox).not.toBeNull();
+    expect(cardBox).not.toBeNull();
+    expect(panelBox!.y).toBeGreaterThanOrEqual(cardBox!.y + cardBox!.height - 1);
+    await expect(panel).toHaveCSS("overflow-y", "auto");
     await expect(london.getByRole("button", { name: "More conditions" })).toHaveAttribute("aria-expanded", "true");
     await panel.getByRole("button", { name: "Close weather details for London" }).tap();
     await expect(panel).toBeHidden();
@@ -58,6 +64,12 @@ test("reveals richer forecast details with hover and a tappable pin control", as
     await expect(panel).toContainText("Humidity");
     await expect(panel).toContainText("1008 hPa");
     await expect(panel).toContainText("Sunrise");
+    const panelBox = await panel.boundingBox();
+    const cardBox = await london.locator(".spotlight-card").boundingBox();
+    expect(panelBox).not.toBeNull();
+    expect(cardBox).not.toBeNull();
+    expect(panelBox!.y).toBeGreaterThanOrEqual(cardBox!.y + cardBox!.height - 1);
+    await expect(panel).toHaveCSS("overflow-y", "auto");
     await page.locator(".hero").hover();
     await expect(panel).toBeHidden();
     await london.getByRole("button", { name: "More conditions" }).click();
@@ -65,9 +77,44 @@ test("reveals richer forecast details with hover and a tappable pin control", as
     await page.locator(".hero").hover();
     await expect(panel).toBeVisible();
     await panel.getByRole("button", { name: "Close weather details for London" }).click();
+    await page.locator(".hero").hover();
     await expect(panel).toBeHidden();
   }
   await expect(london.getByRole("heading", { name: "London" })).toBeFocused();
+});
+
+test("closes a pinned detail popover when the user selects another city", async ({ page }) => {
+  await mockDashboardApi(page);
+  await seedPlaces(page, [places.london, places.tokyo]);
+  await page.goto("/");
+  const london = card(page, "London");
+  const tokyo = card(page, "Tokyo");
+  await london.getByRole("button", { name: "More conditions" }).click();
+  await expect(london.getByRole("region", { name: "Additional weather details for London" })).toBeVisible();
+  await tokyo.getByRole("heading", { name: "Tokyo" }).click();
+  await expect(london.getByRole("region", { name: "Additional weather details for London" })).toBeHidden();
+  await expect(tokyo.getByRole("region", { name: "Additional weather details for Tokyo" })).toBeHidden();
+  await expect(tokyo.getByRole("button", { name: "In focus for Tokyo" })).toHaveAttribute("aria-pressed", "true");
+});
+
+test("daylight and sky layers transition smoothly when motion is enabled", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await mockDashboardApi(page);
+  await seedPlaces(page, [places.london, places.tokyo]);
+  await page.goto("/");
+  const transitions = await page.locator("[data-renderer]").evaluate(host => {
+    const day = host.children[0];
+    const twilight = host.children[1];
+    const clouds = host.children[2];
+    return {
+      day: getComputedStyle(day).transitionDuration,
+      twilight: getComputedStyle(twilight).transitionDuration,
+      clouds: getComputedStyle(clouds).transitionDuration,
+    };
+  });
+  expect(transitions.day).toContain("1.2s");
+  expect(transitions.twilight).toBe("1.2s");
+  expect(transitions.clouds).toContain("1s");
 });
 
 test("iPhone sized touch search selects Timișoara when typed without diacritics @webkit", async ({ page }, testInfo) => {
@@ -94,6 +141,7 @@ test("keeps four selected places across reload and allows removal and replacemen
     } } });
     const locationIds = (route.request().postDataJSON() as { locationIds: number[] }).locationIds;
     return route.fulfill({ json: { image: { data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jFtoAAAAASUVORK5CYII=", mimeType: "image/png", width: 1, height: 1, model: "fixture-image" },
+      selectionLocationIds: locationIds, focusLocationId: null,
       prompt: { version: "weather-panels-v2", text: "Four places, their observed weather, four panels.", locationIds, observedAt: Array(4).fill("2026-10-09T17:00:00Z") } } });
   });
   await page.goto("/");
@@ -123,8 +171,12 @@ test("keeps four selected places across reload and allows removal and replacemen
   await page.getByRole("button", { name: "Generate weather image", exact: true }).click();
   await expect(page.locator(".studio-status")).toContainText("Gemini project's quota");
   await page.getByRole("button", { name: "Generate weather image", exact: true }).click();
-  await expect(page.getByAltText("AI-generated four-panel interpretation of the weather in your selected places")).toBeVisible();
+  await expect(page.getByAltText("AI-generated interpretation of the weather in your selected places")).toBeVisible();
   await expect(page.locator(".image-prompt pre")).toContainText("four panels");
+  const outputImage = page.getByAltText("AI-generated interpretation of the weather in your selected places");
+  await expect(outputImage).toHaveAttribute("width", "1");
+  await expect(outputImage).toHaveAttribute("height", "1");
+  await expect(outputImage).toHaveCSS("object-fit", "contain");
   await page.getByRole("button", { name: "Remove London", exact: true }).click();
   await expect(card(page, "London")).toHaveCount(0);
   await expect(search(page)).toBeEnabled();
@@ -134,6 +186,18 @@ test("keeps four selected places across reload and allows removal and replacemen
   await page.reload();
   await expect(card(page, "Cape Town")).toBeVisible();
   await expect(card(page, "London")).toHaveCount(0);
+});
+
+test("local image generation sends only the focused city for its scene", async ({ page }) => {
+  const api = await mockDashboardApi(page);
+  await seedPlaces(page, [places.springfieldMassachusetts, places.london, places.tokyo, places.reykjavik]);
+  await page.goto("/");
+  const london = card(page, "London");
+  await london.getByRole("button", { name: "Focus sky for London" }).click();
+  await page.getByRole("button", { name: "Generate weather image", exact: true }).click();
+  await expect(page.getByAltText("AI-generated weather scene inspired by London")).toBeVisible();
+  expect(api.imageRequests.at(-1)).toEqual({ locationIds: [places.springfieldMassachusetts.id, places.london.id, places.tokyo.id, places.reykjavik.id], selectedLocationId: places.london.id });
+  await expect(page.locator(".image-prompt pre")).toContainText("One selected city scene");
 });
 
 test("rejects a duplicate and does not fill another slot", async ({ page }) => {

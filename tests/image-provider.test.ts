@@ -203,7 +203,8 @@ describe("local ComfyUI image provider", () => {
     expect(init?.redirect).toBe("error");
     const submitted = JSON.parse(init?.body as string) as { prompt: Record<string, { inputs: Record<string, unknown> }> };
     expect(submitted.prompt["4"]?.inputs).toMatchObject({ width: 768, height: 512, batch_size: 1 });
-    expect(submitted.prompt["5"]?.inputs).toMatchObject({ seed: 1234, steps: 4, cfg: 0 });
+    expect(submitted.prompt["5"]?.inputs).toMatchObject({ seed: 1234, steps: 4, cfg: 2 });
+    expect(submitted.prompt["3"]?.inputs.text).toContain("flower field");
     expect(submitted.prompt["1"]?.inputs).toEqual({ ckpt_name: "sd_xl_turbo_1.0_fp16.safetensors" });
     expect(String(transport.mock.calls[2]![0])).toBe("http://127.0.0.1:8188/view?filename=fourcast-weather_00001_.png&subfolder=&type=output");
   });

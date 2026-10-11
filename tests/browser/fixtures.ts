@@ -64,6 +64,7 @@ export async function mockDashboardApi(page: Page, options: { consent?: "allow" 
   const failingWeather = new Set<number>();
   const failingSearches = new Set<string>();
   const requestedWeather: number[] = [];
+  const imageRequests: Array<{ locationIds: number[]; selectedLocationId?: number }> = [];
   const extraPlaces: Location[] = [];
   const failingRestorations = new Set<number>();
   const requestedRestorations: number[][] = [];
@@ -134,7 +135,19 @@ export async function mockDashboardApi(page: Page, options: { consent?: "allow" 
     }
     await route.fulfill({ json: weatherFor(place) });
   });
-  return { failingWeather, failingSearches, requestedWeather, delaySearch, extraPlaces, failingRestorations, requestedRestorations, delayRestore };
+  await page.route("**/api/image", async (route) => {
+    const body = route.request().postDataJSON() as { locationIds: number[]; selectedLocationId?: number };
+    imageRequests.push(body);
+    const focused = body.selectedLocationId;
+    const local = focused !== undefined;
+    await route.fulfill({ json: {
+      image: { data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jFtoAAAAASUVORK5CYII=", mimeType: "image/png", width: 1, height: 1, model: "fixture-image" },
+      selectionLocationIds: body.locationIds,
+      focusLocationId: focused ?? null,
+      prompt: { version: local ? "weather-city-v1" : "weather-panels-v2", text: local ? "One selected city scene" : "Four places, their observed weather, four panels.", locationIds: local ? [focused] : body.locationIds, observedAt: ["2026-10-09T17:00:00Z"] },
+    } });
+  });
+  return { failingWeather, failingSearches, requestedWeather, imageRequests, delaySearch, extraPlaces, failingRestorations, requestedRestorations, delayRestore };
 }
 
 export async function seedPlaces(page: Page, locations: Location[]) {

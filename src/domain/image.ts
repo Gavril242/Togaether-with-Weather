@@ -1,7 +1,8 @@
 export const WEATHER_IMAGE_PROMPT_VERSION = "weather-panels-v2";
+export const WEATHER_CITY_IMAGE_PROMPT_VERSION = "weather-city-v1";
 
 export interface WeatherImagePrompt {
-  version: typeof WEATHER_IMAGE_PROMPT_VERSION;
+  version: typeof WEATHER_IMAGE_PROMPT_VERSION | typeof WEATHER_CITY_IMAGE_PROMPT_VERSION;
   text: string;
   locationIds: readonly number[];
   observedAt: readonly string[];
